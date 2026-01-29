@@ -14,7 +14,7 @@ import (
 
 var (
 	K8sClient *kubernetes.Clientset
-	Namespace = "combinator"
+	Namespace = "storebirth"
 )
 
 // InitK8s initializes Kubernetes client
@@ -38,19 +38,19 @@ func InitK8s(kubeconfig string) error {
 }
 
 // UpdateUserConfig updates ConfigMap for user's combinator pod
-func UpdateUserConfig(userUUID string) error {
+func UpdateUserConfig(userUID string) error {
 	if K8sClient == nil {
 		return fmt.Errorf("k8s client not initialized")
 	}
 
 	// Generate config
-	config, err := generateConfig(userUUID)
+	config, err := generateConfig(userUID)
 	if err != nil {
 		return err
 	}
 
 	configJSON, _ := json.MarshalIndent(config, "", "  ")
-	configMapName := fmt.Sprintf("combinator-config-%s", userUUID)
+	configMapName := fmt.Sprintf("combinator-config-%s", userUID)
 
 	ctx := context.Background()
 	cm, err := K8sClient.CoreV1().ConfigMaps(Namespace).Get(ctx, configMapName, metav1.GetOptions{})
@@ -76,12 +76,12 @@ func UpdateUserConfig(userUUID string) error {
 }
 
 // generateConfig generates combinator config for user
-func generateConfig(userUUID string) (map[string]any, error) {
+func generateConfig(userUID string) (map[string]any, error) {
 	// Get RDBs
 	rdbRows, err := DB.Query(
-		`SELECT uuid, rdb_type, url FROM user_rdbs
-		 WHERE user_id = (SELECT id FROM users WHERE uuid = $1) AND enabled = true`,
-		userUUID,
+		`SELECT uid, rdb_type, url FROM user_rdbs
+		 WHERE user_id = (SELECT id FROM users WHERE uid = $1) AND enabled = true`,
+		userUID,
 	)
 	if err != nil {
 		return nil, err
@@ -90,10 +90,10 @@ func generateConfig(userUUID string) (map[string]any, error) {
 
 	var rdbs []map[string]any
 	for rdbRows.Next() {
-		var uuid, rdbType, url string
-		rdbRows.Scan(&uuid, &rdbType, &url)
+		var uid, rdbType, url string
+		rdbRows.Scan(&uid, &rdbType, &url)
 		rdbs = append(rdbs, map[string]any{
-			"id":      uuid,
+			"id":      uid,
 			"enabled": true,
 			"url":     url,
 		})
@@ -101,9 +101,9 @@ func generateConfig(userUUID string) (map[string]any, error) {
 
 	// Get KVs
 	kvRows, err := DB.Query(
-		`SELECT uuid, kv_type, url FROM user_kvs
-		 WHERE user_id = (SELECT id FROM users WHERE uuid = $1) AND enabled = true`,
-		userUUID,
+		`SELECT uid, kv_type, url FROM user_kvs
+		 WHERE user_id = (SELECT id FROM users WHERE uid = $1) AND enabled = true`,
+		userUID,
 	)
 	if err != nil {
 		return nil, err
@@ -112,10 +112,10 @@ func generateConfig(userUUID string) (map[string]any, error) {
 
 	var kvs []map[string]any
 	for kvRows.Next() {
-		var uuid, kvType, url string
-		kvRows.Scan(&uuid, &kvType, &url)
+		var uid, kvType, url string
+		kvRows.Scan(&uid, &kvType, &url)
 		kvs = append(kvs, map[string]any{
-			"id":      uuid,
+			"id":      uid,
 			"enabled": true,
 			"url":     url,
 		})
@@ -127,18 +127,35 @@ func generateConfig(userUUID string) (map[string]any, error) {
 	}, nil
 }
 
+// CheckUserPodExists checks if a combinator pod exists for user
+func CheckUserPodExists(userUID string) (bool, error) {
+	if K8sClient == nil {
+		return false, fmt.Errorf("k8s client not initialized")
+	}
+
+	ctx := context.Background()
+	podName := fmt.Sprintf("combinator-%s", userUID)
+
+	_, err := K8sClient.CoreV1().Pods(Namespace).Get(ctx, podName, metav1.GetOptions{})
+	if err != nil {
+		// Pod doesn't exist
+		return false, nil
+	}
+	return true, nil
+}
+
 // CreateUserPod creates a combinator pod for user
-func CreateUserPod(userUUID string) error {
+func CreateUserPod(userUID string) error {
 	if K8sClient == nil {
 		return fmt.Errorf("k8s client not initialized")
 	}
 
 	ctx := context.Background()
-	podName := fmt.Sprintf("combinator-%s", userUUID)
-	configMapName := fmt.Sprintf("combinator-config-%s", userUUID)
+	podName := fmt.Sprintf("combinator-%s", userUID)
+	configMapName := fmt.Sprintf("combinator-config-%s", userUID)
 
 	// Create ConfigMap first
-	if err := UpdateUserConfig(userUUID); err != nil {
+	if err := UpdateUserConfig(userUID); err != nil {
 		return fmt.Errorf("failed to create config: %w", err)
 	}
 
@@ -148,8 +165,8 @@ func CreateUserPod(userUUID string) error {
 			Name:      podName,
 			Namespace: Namespace,
 			Labels: map[string]string{
-				"app":       "combinator",
-				"user-uuid": userUUID,
+				"app":      "combinator",
+				"user-uid": userUID,
 			},
 		},
 		Spec: corev1.PodSpec{
@@ -161,7 +178,7 @@ func CreateUserPod(userUUID string) error {
 						{ContainerPort: 8899, Name: "http"},
 					},
 					Env: []corev1.EnvVar{
-						{Name: "USER_UUID", Value: userUUID},
+						{Name: "USER_UID", Value: userUID},
 					},
 					VolumeMounts: []corev1.VolumeMount{
 						{
@@ -190,4 +207,29 @@ func CreateUserPod(userUUID string) error {
 
 	_, err := K8sClient.CoreV1().Pods(Namespace).Create(ctx, pod, metav1.CreateOptions{})
 	return err
+}
+
+// DeleteUserPod deletes a combinator pod for user
+func DeleteUserPod(userUID string) error {
+	if K8sClient == nil {
+		return fmt.Errorf("k8s client not initialized")
+	}
+
+	ctx := context.Background()
+	podName := fmt.Sprintf("combinator-%s", userUID)
+	configMapName := fmt.Sprintf("combinator-config-%s", userUID)
+
+	// Delete Pod
+	err := K8sClient.CoreV1().Pods(Namespace).Delete(ctx, podName, metav1.DeleteOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to delete pod: %w", err)
+	}
+
+	// Delete ConfigMap
+	err = K8sClient.CoreV1().ConfigMaps(Namespace).Delete(ctx, configMapName, metav1.DeleteOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to delete configmap: %w", err)
+	}
+
+	return nil
 }

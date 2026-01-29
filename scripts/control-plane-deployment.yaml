@@ -3,7 +3,7 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: combinator
+  name: store
 
 ---
 # PostgreSQL PersistentVolume (HostPath)
@@ -27,7 +27,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: postgres-pvc
-  namespace: combinator
+  namespace: storebrith
 spec:
   accessModes:
     - ReadWriteOnce
@@ -41,13 +41,13 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: postgres-init
-  namespace: combinator
+  namespace: storebi r t h
 data:
   init.sql: |
     -- Control Plane Database Schema
     CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
-        uuid UUID DEFAULT gen_random_uuid() UNIQUE NOT NULL,
+        uid VARCHAR(64) UNIQUE NOT NULL,
         email VARCHAR(255) UNIQUE NOT NULL,
         password_hash VARCHAR(255) NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -55,26 +55,26 @@ data:
 
     CREATE TABLE IF NOT EXISTS user_rdbs (
         id SERIAL PRIMARY KEY,
-        uuid UUID DEFAULT gen_random_uuid() UNIQUE NOT NULL,
+        uid VARCHAR(64) UNIQUE NOT NULL,
         user_id SERIAL NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         name VARCHAR(255) NOT NULL,
         rdb_type VARCHAR(50) NOT NULL,
         url TEXT NOT NULL,
         enabled BOOLEAN DEFAULT true,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(user_id, uuid)
+        UNIQUE(user_id, uid)
     );
 
     CREATE TABLE IF NOT EXISTS user_kvs (
         id SERIAL PRIMARY KEY,
         user_id SERIAL NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        uuid UUID DEFAULT gen_random_uuid() UNIQUE NOT NULL,
+        uid VARCHAR(64) UNIQUE NOT NULL,
         name VARCHAR(255) NOT NULL,
         kv_type VARCHAR(50) NOT NULL,
         url TEXT NOT NULL,
         enabled BOOLEAN DEFAULT true,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(user_id, uuid)
+        UNIQUE(user_id, uid)
     );
 
     CREATE TABLE IF NOT EXISTS verification_codes (
@@ -96,7 +96,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: postgres
-  namespace: combinator
+  namespace: storebirth
 spec:
   ports:
   - port: 5432
@@ -108,7 +108,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: postgres
-  namespace: combinator
+  namespace: storebirth
 spec:
   replicas: 1
   selector:
@@ -150,7 +150,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: control-plane-secret
-  namespace: combinator
+  namespace: storebirth
 type: Opaque
 stringData:
   jwt-secret: "change-me-in-production"
@@ -161,7 +161,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: control-plane
-  namespace: combinator
+  namespace: storebirth
 spec:
   type: NodePort
   ports:
@@ -177,7 +177,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: control-plane
-  namespace: combinator
+  namespace: storebirth
 spec:
   replicas: 1
   selector:
@@ -207,7 +207,7 @@ spec:
         - "-l"
         - "0.0.0.0:9900"
         - "-n"
-        - "combinator"
+        - "storebirth"
 
 ---
 # ServiceAccount for Control Plane
@@ -215,7 +215,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: control-plane-sa
-  namespace: combinator
+  namespace: storebirth
 
 ---
 # ClusterRole for managing pods and configmaps
@@ -237,7 +237,7 @@ metadata:
 subjects:
 - kind: ServiceAccount
   name: control-plane-sa
-  namespace: combinator
+  namespace: storebirth
 roleRef:
   kind: ClusterRole
   name: control-plane-role
@@ -253,20 +253,20 @@ spec:
   entryPoints:
     - websecure
   routes:
-    - match: Host(`combinator.${DOMAIN}`)
+    - match: Host(`storebirth.${DOMAIN}`)
       kind: Rule
       services:
-        - name: combinator
+        - name: storebirth
           port: 9900
   tls:
     secretName: ingress-tls
 ---
-# ExternalName Service - 指向combinator命名空间的Service
+# ExternalName Service - 指向storebirth命名空间的Service
 apiVersion: v1
 kind: Service
 metadata:
-  name: combinator
+  name: storebirth
   namespace: ingress
 spec:
   type: ExternalName
-  externalName: combinator.combinator.svc.cluster.local
+  externalName: storebirth.storebirth.svc.cluster.local

@@ -41,7 +41,7 @@ spec:
     name: zerossl-prod
     kind: ClusterIssuer
   dnsNames:
-    - combinator.${DOMAIN}
+    - storebirth.${DOMAIN}
     - "*.combinator.${DOMAIN}"
     - "*.s3.${DOMAIN}"
 

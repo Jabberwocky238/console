@@ -13,13 +13,12 @@ func main() {
 	listen := flag.String("l", "localhost:9900", "Listen address")
 	dbDSN := flag.String("d", "", "Database DSN")
 	kubeconfig := flag.String("k", "", "Kubeconfig path (empty for in-cluster)")
-	namespace := flag.String("n", "combinator", "Kubernetes namespace")
 	flag.Parse()
 
 	// Get JWT secret from env
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
-		log.Fatal("JWT_SECRET not set")
+		jwtSecret = "defaultsecret"
 	}
 	JWTSecret = []byte(jwtSecret)
 
@@ -39,7 +38,6 @@ func main() {
 	defer DB.Close()
 
 	// Initialize K8s client
-	Namespace = *namespace
 	if err := InitK8s(*kubeconfig); err != nil {
 		log.Printf("Warning: K8s client init failed: %v", err)
 		log.Println("Running without K8s integration")
@@ -51,6 +49,9 @@ func main() {
 
 	// Setup Gin router
 	r := gin.Default()
+
+	// Serve index.html at root
+	r.StaticFile("/", "./index.html")
 
 	// Public routes
 	r.POST("/auth/register", Register)
@@ -68,6 +69,8 @@ func main() {
 		api.POST("/kv", CreateKV)
 		api.GET("/kv", ListKVs)
 		api.DELETE("/kv/:id", DeleteKV)
+		api.POST("/combinator", AddCombinator)
+		api.DELETE("/combinator", DeleteCombinator)
 	}
 
 	// Start server

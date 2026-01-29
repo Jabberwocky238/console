@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StoreBirth Terminal</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: #0c0c0c;
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #terminal {
+            height: 100vh;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #output {
+            flex: 1;
+            overflow-y: auto;
+            margin-bottom: 10px;
+        }
+
+        .line {
+            margin: 2px 0;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .prompt {
+            color: #00ff00;
+        }
+
+        .error {
+            color: #ff0000;
+        }
+
+        .success {
+            color: #00ff00;
+        }
+
+        .info {
+            color: #00aaff;
+        }
+
+        .warning {
+            color: #ffaa00;
+        }
+
+        #input-line {
+            display: flex;
+            align-items: center;
+        }
+
+        #prompt-symbol {
+            color: #00ff00;
+            margin-right: 5px;
+        }
+
+        #input {
+            background: transparent;
+            border: none;
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            outline: none;
+            flex: 1;
+            caret-color: #00ff00;
+        }
+
+        #cursor {
+            display: inline-block;
+            width: 8px;
+            height: 16px;
+            background-color: #00ff00;
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0%, 49% { opacity: 1; }
+            50%, 100% { opacity: 0; }
+        }
+
+        .ascii-art {
+            color: #00aaff;
+            font-size: 12px;
+            line-height: 1.2;
+        }
+
+        ::-webkit-scrollbar {
+            width: 10px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #0c0c0c;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #00ff00;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #00aa00;
+        }
+    </style>
+</head>
+<body>
+    <div id="terminal">
+        <div id="output"></div>
+        <div id="input-line">
+            <span id="prompt-symbol">guest@storebirth:~$</span>
+            <input type="text" id="input" autocomplete="off" autofocus>
+        </div>
+    </div>
+
+    <script>
+        const output = document.getElementById('output');
+        const input = document.getElementById('input');
+        const promptSymbol = document.getElementById('prompt-symbol');
+
+        let currentUser = null;
+        let token = null;
+        let commandHistory = [];
+        let historyIndex = -1;
+        let awaitingInput = false;
+        let inputCallback = null;
+        let passwordMode = false;
+
+        const API_BASE = window.location.origin;
+
+        // ASCII Art
+        const asciiArt = `
+   _____ _                 ____  _      _   _
+  / ____| |               |  _ \\(_)    | | | |
+ | (___ | |_ ___  _ __ ___| |_) |_ _ __| |_| |__
+  \\___ \\| __/ _ \\| '__/ _ \\  _ <| | '__| __| '_ \\
+  ____) | || (_) | | |  __/ |_) | | |  | |_| | | |
+ |_____/ \\__\\___/|_|  \\___|____/|_|_|   \\__|_| |_|
+
+        `;
+
+        function print(text, className = '') {
+            const line = document.createElement('div');
+            line.className = 'line ' + className;
+            line.textContent = text;
+            output.appendChild(line);
+            output.scrollTop = output.scrollHeight;
+        }
+
+        function printHTML(html, className = '') {
+            const line = document.createElement('div');
+            line.className = 'line ' + className;
+            line.innerHTML = html;
+            output.appendChild(line);
+            output.scrollTop = output.scrollHeight;
+        }
+
+        function clear() {
+            output.innerHTML = '';
+        }
+
+        function updatePrompt() {
+            if (currentUser) {
+                promptSymbol.textContent = `${currentUser}@storebirth:~$`;
+            } else {
+                promptSymbol.textContent = 'guest@storebirth:~$';
+            }
+        }
+
+        async function apiCall(endpoint, method = 'GET', data = null) {
+            const options = {
+                method,
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            };
+
+            if (token) {
+                options.headers['Authorization'] = `Bearer ${token}`;
+            }
+
+            if (data) {
+                options.body = JSON.stringify(data);
+            }
+
+            try {
+                const response = await fetch(API_BASE + endpoint, options);
+                const result = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(result.error || 'Request failed');
+                }
+
+                return result;
+            } catch (error) {
+                throw error;
+            }
+        }
+
+        function waitForInput(prompt, isPassword = false) {
+            return new Promise((resolve) => {
+                print(prompt, 'info');
+                awaitingInput = true;
+                passwordMode = isPassword;
+                inputCallback = resolve;
+                if (isPassword) {
+                    input.type = 'password';
+                }
+            });
+        }
+
+        async function handleCommand(cmd) {
+            const parts = cmd.trim().split(/\s+/);
+            const command = parts[0].toLowerCase();
+            const args = parts.slice(1);
+
+            print(`${promptSymbol.textContent} ${cmd}`);
+
+            switch (command) {
+                case 'help':
+                    showHelp();
+                    break;
+
+                case 'clear':
+                    clear();
+                    break;
+
+                case 'register':
+                    await registerUser();
+                    break;
+
+                case 'login':
+                    await loginUser();
+                    break;
+
+                case 'logout':
+                    logout();
+                    break;
+
+                case 'whoami':
+                    print(currentUser || 'guest', 'info');
+                    break;
+
+                case 'rdb':
+                    await handleRDB(args);
+                    break;
+
+                case 'kv':
+                    await handleKV(args);
+                    break;
+
+                case 'combinator':
+                    await handleCombinator(args);
+                    break;
+
+                case 'status':
+                    showStatus();
+                    break;
+
+                case '':
+                    break;
+
+                default:
+                    print(`Command not found: ${command}`, 'error');
+                    print('Type "help" for available commands', 'info');
+            }
+        }
+
+        function showHelp() {
+            print('');
+            print('Available Commands:', 'info');
+            print('');
+            print('  help                    - Show this help message');
+            print('  clear                   - Clear the terminal');
+            print('  register                - Register a new account');
+            print('  login                   - Login to your account');
+            print('  logout                  - Logout from your account');
+            print('  whoami                  - Show current user');
+            print('  status                  - Show current status');
+            print('');
+            print('  rdb list                - List all RDB resources');
+            print('  rdb add                 - Add a new RDB resource');
+            print('  rdb delete <id>         - Delete an RDB resource');
+            print('');
+            print('  kv list                 - List all KV resources');
+            print('  kv add                  - Add a new KV resource');
+            print('  kv delete <id>          - Delete a KV resource');
+            print('');
+            print('  combinator add <userid> - Create a combinator pod');
+            print('  combinator delete <id>  - Delete a combinator pod');
+            print('');
+        }
+
+        async function registerUser() {
+            try {
+                const email = await waitForInput('Enter email:');
+
+                print('Sending verification code...', 'info');
+                await apiCall('/auth/send-code', 'POST', { email });
+                print('Verification code sent to your email', 'success');
+
+                const code = await waitForInput('Enter verification code:');
+                const password = await waitForInput('Enter password:', true);
+
+                const result = await apiCall('/auth/register', 'POST', {
+                    email,
+                    code,
+                    password
+                });
+
+                currentUser = result.user_id;
+                token = result.token;
+                updatePrompt();
+
+                print('', 'success');
+                print('Registration successful!', 'success');
+                print(`User ID: ${result.user_id}`, 'info');
+                print(`Email: ${result.email}`, 'info');
+            } catch (error) {
+                print(`Registration failed: ${error.message}`, 'error');
+            }
+        }
+
+        async function loginUser() {
+            try {
+                const email = await waitForInput('Enter email:');
+                const password = await waitForInput('Enter password:', true);
+
+                const result = await apiCall('/auth/login', 'POST', {
+                    email,
+                    password
+                });
+
+                currentUser = result.user_id;
+                token = result.token;
+                updatePrompt();
+
+                print('', 'success');
+                print('Login successful!', 'success');
+                print(`User ID: ${result.user_id}`, 'info');
+            } catch (error) {
+                print(`Login failed: ${error.message}`, 'error');
+            }
+        }
+
+        function logout() {
+            currentUser = null;
+            token = null;
+            updatePrompt();
+            print('Logged out successfully', 'success');
+        }
+
+        function showStatus() {
+            print('');
+            print('=== System Status ===', 'info');
+            print(`User: ${currentUser || 'Not logged in'}`, currentUser ? 'success' : 'warning');
+            print(`Token: ${token ? 'Active' : 'None'}`, token ? 'success' : 'warning');
+            print('');
+        }
+
+        async function handleRDB(args) {
+            if (!token) {
+                print('Please login first', 'error');
+                return;
+            }
+
+            const subcommand = args[0];
+
+            switch (subcommand) {
+                case 'list':
+                    await listRDBs();
+                    break;
+
+                case 'add':
+                    await addRDB();
+                    break;
+
+                case 'delete':
+                    if (!args[1]) {
+                        print('Usage: rdb delete <id>', 'error');
+                        return;
+                    }
+                    await deleteRDB(args[1]);
+                    break;
+
+                default:
+                    print('Usage: rdb [list|add|delete]', 'error');
+            }
+        }
+
+        async function listRDBs() {
+            try {
+                const result = await apiCall('/api/rdb', 'GET');
+                print('');
+                print('=== RDB Resources ===', 'info');
+                if (result.rdbs && result.rdbs.length > 0) {
+                    result.rdbs.forEach(rdb => {
+                        print(`ID: ${rdb.id}`, 'success');
+                        print(`  Name: ${rdb.name}`);
+                        print(`  Type: ${rdb.rdb_type}`);
+                        print(`  URL: ${rdb.url}`);
+                        print(`  Enabled: ${rdb.enabled}`);
+                        print('');
+                    });
+                } else {
+                    print('No RDB resources found', 'warning');
+                }
+            } catch (error) {
+                print(`Failed to list RDBs: ${error.message}`, 'error');
+            }
+        }
+
+        async function addRDB() {
+            try {
+                const name = await waitForInput('Enter RDB name:');
+                const type = await waitForInput('Enter RDB type (sqlite/postgres/mysql):');
+                const url = await waitForInput('Enter RDB URL:');
+
+                const result = await apiCall('/api/rdb', 'POST', {
+                    name,
+                    rdb_type: type,
+                    url
+                });
+
+                print('', 'success');
+                print('RDB created successfully!', 'success');
+                print(`ID: ${result.id}`, 'info');
+            } catch (error) {
+                print(`Failed to create RDB: ${error.message}`, 'error');
+            }
+        }
+
+        async function deleteRDB(id) {
+            try {
+                await apiCall(`/api/rdb/${id}`, 'DELETE');
+                print('RDB deleted successfully', 'success');
+            } catch (error) {
+                print(`Failed to delete RDB: ${error.message}`, 'error');
+            }
+        }
+
+        async function handleKV(args) {
+            if (!token) {
+                print('Please login first', 'error');
+                return;
+            }
+
+            const subcommand = args[0];
+
+            switch (subcommand) {
+                case 'list':
+                    await listKVs();
+                    break;
+
+                case 'add':
+                    await addKV();
+                    break;
+
+                case 'delete':
+                    if (!args[1]) {
+                        print('Usage: kv delete <id>', 'error');
+                        return;
+                    }
+                    await deleteKV(args[1]);
+                    break;
+
+                default:
+                    print('Usage: kv [list|add|delete]', 'error');
+            }
+        }
+
+        async function listKVs() {
+            try {
+                const result = await apiCall('/api/kv', 'GET');
+                print('');
+                print('=== KV Resources ===', 'info');
+                if (result.kvs && result.kvs.length > 0) {
+                    result.kvs.forEach(kv => {
+                        print(`ID: ${kv.id}`, 'success');
+                        print(`  Name: ${kv.name}`);
+                        print(`  Type: ${kv.kv_type}`);
+                        print(`  URL: ${kv.url}`);
+                        print(`  Enabled: ${kv.enabled}`);
+                        print('');
+                    });
+                } else {
+                    print('No KV resources found', 'warning');
+                }
+            } catch (error) {
+                print(`Failed to list KVs: ${error.message}`, 'error');
+            }
+        }
+
+        async function addKV() {
+            try {
+                const name = await waitForInput('Enter KV name:');
+                const type = await waitForInput('Enter KV type (redis/memory):');
+                const url = await waitForInput('Enter KV URL:');
+
+                const result = await apiCall('/api/kv', 'POST', {
+                    name,
+                    kv_type: type,
+                    url
+                });
+
+                print('', 'success');
+                print('KV created successfully!', 'success');
+                print(`ID: ${result.id}`, 'info');
+            } catch (error) {
+                print(`Failed to create KV: ${error.message}`, 'error');
+            }
+        }
+
+        async function deleteKV(id) {
+            try {
+                await apiCall(`/api/kv/${id}`, 'DELETE');
+                print('KV deleted successfully', 'success');
+            } catch (error) {
+                print(`Failed to delete KV: ${error.message}`, 'error');
+            }
+        }
+
+        async function handleCombinator(args) {
+            if (!token) {
+                print('Please login first', 'error');
+                return;
+            }
+
+            const subcommand = args[0];
+
+            switch (subcommand) {
+                case 'add':
+                    if (!args[1]) {
+                        print('Usage: combinator add <userid>', 'error');
+                        return;
+                    }
+                    await addCombinator(args[1]);
+                    break;
+
+                case 'delete':
+                    if (!args[1]) {
+                        print('Usage: combinator delete <userid>', 'error');
+                        return;
+                    }
+                    await deleteCombinator(args[1]);
+                    break;
+
+                default:
+                    print('Usage: combinator [add|delete] <userid>', 'error');
+            }
+        }
+
+        async function addCombinator(userid) {
+            try {
+                const result = await apiCall('/api/combinator', 'POST', { userid });
+                print('', 'success');
+                print('Combinator created successfully!', 'success');
+                print(`User ID: ${result.user_id}`, 'info');
+                print(`Pod Name: ${result.pod_name}`, 'info');
+                print(`RDB ID: ${result.rdb_id}`, 'info');
+                print(`KV ID: ${result.kv_id}`, 'info');
+            } catch (error) {
+                print(`Failed to create combinator: ${error.message}`, 'error');
+            }
+        }
+
+        async function deleteCombinator(userid) {
+            try {
+                await apiCall('/api/combinator', 'DELETE', { userid });
+                print('Combinator deleted successfully', 'success');
+            } catch (error) {
+                print(`Failed to delete combinator: ${error.message}`, 'error');
+            }
+        }
+
+        // Event listeners
+        input.addEventListener('keydown', async (e) => {
+            if (e.key === 'Enter') {
+                const value = input.value.trim();
+                input.value = '';
+
+                if (awaitingInput) {
+                    awaitingInput = false;
+                    input.type = 'text';
+                    passwordMode = false;
+                    if (inputCallback) {
+                        inputCallback(value);
+                        inputCallback = null;
+                    }
+                } else if (value) {
+                    commandHistory.push(value);
+                    historyIndex = commandHistory.length;
+                    await handleCommand(value);
+                }
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (historyIndex > 0) {
+                    historyIndex--;
+                    input.value = commandHistory[historyIndex];
+                }
+            } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (historyIndex < commandHistory.length - 1) {
+                    historyIndex++;
+                    input.value = commandHistory[historyIndex];
+                } else {
+                    historyIndex = commandHistory.length;
+                    input.value = '';
+                }
+            }
+        });
+
+        // Keep input focused
+        document.addEventListener('click', () => {
+            input.focus();
+        });
+
+        // Initialize
+        printHTML(asciiArt, 'ascii-art');
+        print('');
+        print('Welcome to StoreBirth Terminal v1.0', 'info');
+        print('Type "help" for available commands', 'info');
+        print('');
+    </script>
+</body>
+</html>

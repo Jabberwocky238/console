@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"time"
@@ -10,6 +11,49 @@ import (
 )
 
 var JWTSecret []byte
+
+// GenerateUID generates a UID from email (lowercase letters before @) + 4 random digits
+func GenerateUID(email string) string {
+	// Extract part before @
+	atIndex := 0
+	for i, c := range email {
+		if c == '@' {
+			atIndex = i
+			break
+		}
+	}
+
+	prefix := ""
+	if atIndex > 0 {
+		prefix = email[:atIndex]
+	}
+
+	// Convert to lowercase and keep only letters
+	var letters []rune
+	for _, c := range prefix {
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') {
+			if c >= 'A' && c <= 'Z' {
+				c = c + 32 // Convert to lowercase
+			}
+			letters = append(letters, c)
+		}
+	}
+
+	// Generate 4 random digits
+	bytes := make([]byte, 2)
+	rand.Read(bytes)
+	randomNum := (int(bytes[0])<<8 | int(bytes[1])) % 10000
+
+	return fmt.Sprintf("%s%04d", string(letters), randomNum)
+}
+
+// GenerateResourceUID generates a random UID for resources (RDB/KV)
+func GenerateResourceUID() string {
+	bytes := make([]byte, 8)
+	rand.Read(bytes)
+	// Generate a 16-character hex string
+	return fmt.Sprintf("%x", bytes)
+}
 
 // HashPassword hashes a password using bcrypt
 func HashPassword(password string) (string, error) {

@@ -10,7 +10,7 @@ import (
 // User model
 type User struct {
 	ID           int       `json:"-"`
-	UUID         string    `json:"id"`
+	UID          string    `json:"id"`
 	Email        string    `json:"email"`
 	PasswordHash string    `json:"-"`
 	CreatedAt    time.Time `json:"created_at"`
@@ -19,7 +19,7 @@ type User struct {
 // RDB model
 type RDB struct {
 	ID      int    `json:"-"`
-	UUID    string `json:"id"`
+	UID     string `json:"id"`
 	UserID  int    `json:"-"`
 	Name    string `json:"name"`
 	Type    string `json:"rdb_type"`
@@ -30,7 +30,7 @@ type RDB struct {
 // KV model
 type KV struct {
 	ID      int    `json:"-"`
-	UUID    string `json:"id"`
+	UID     string `json:"id"`
 	UserID  int    `json:"-"`
 	Name    string `json:"name"`
 	Type    string `json:"kv_type"`
