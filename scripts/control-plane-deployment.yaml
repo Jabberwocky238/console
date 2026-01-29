@@ -5,6 +5,11 @@ kind: Namespace
 metadata:
   name: storebirth
 ---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: combinator
+---
 # PostgreSQL PersistentVolume (HostPath)
 apiVersion: v1
 kind: PersistentVolume
@@ -55,7 +60,7 @@ data:
     CREATE TABLE IF NOT EXISTS user_rdbs (
         id SERIAL PRIMARY KEY,
         uid VARCHAR(64) UNIQUE NOT NULL,
-        user_id SERIAL NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         name VARCHAR(255) NOT NULL,
         rdb_type VARCHAR(50) NOT NULL,
         url TEXT NOT NULL,
@@ -66,7 +71,7 @@ data:
 
     CREATE TABLE IF NOT EXISTS user_kvs (
         id SERIAL PRIMARY KEY,
-        user_id SERIAL NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         uid VARCHAR(64) UNIQUE NOT NULL,
         name VARCHAR(255) NOT NULL,
         kv_type VARCHAR(50) NOT NULL,
@@ -200,14 +205,11 @@ spec:
             secretKeyRef:
               name: control-plane-secret
               key: jwt-secret
-        - name: DATABASE_URL
-          value: "host=postgres port=5432 user=postgres password=postgres dbname=combfather sslmode=disable"
         args:
         - "-l"
         - "0.0.0.0:9900"
-        - "-n"
-        - "storebirth"
-
+        - "-d"
+        - "host=postgres port=5432 user=postgres password=postgres dbname=combfather sslmode=disable"
 ---
 # ServiceAccount for Control Plane
 apiVersion: v1
@@ -215,7 +217,6 @@ kind: ServiceAccount
 metadata:
   name: control-plane-sa
   namespace: storebirth
-
 ---
 # ClusterRole for managing pods and configmaps
 apiVersion: rbac.authorization.k8s.io/v1
@@ -241,31 +242,3 @@ roleRef:
   kind: ClusterRole
   name: control-plane-role
   apiGroup: rbac.authorization.k8s.io
----
-# Distributor 管理端
-apiVersion: traefik.io/v1alpha1
-kind: IngressRoute
-metadata:
-  name: distributor
-  namespace: ingress
-spec:
-  entryPoints:
-    - websecure
-  routes:
-    - match: Host(`storebirth.${DOMAIN}`)
-      kind: Rule
-      services:
-        - name: storebirth
-          port: 9900
-  tls:
-    secretName: ingress-tls
----
-# ExternalName Service - 指向storebirth命名空间的Service
-apiVersion: v1
-kind: Service
-metadata:
-  name: storebirth
-  namespace: ingress
-spec:
-  type: ExternalName
-  externalName: storebirth.storebirth.svc.cluster.local

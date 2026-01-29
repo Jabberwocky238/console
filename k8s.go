@@ -7,14 +7,20 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
 var (
-	K8sClient *kubernetes.Clientset
-	Namespace = "storebirth"
+	K8sClient           *kubernetes.Clientset
+	DynamicClient       dynamic.Interface
+	Namespace           = "storebirth"   // Control plane namespace
+	CombinatorNamespace = "combinator"   // Combinator pods namespace
+	IngressNamespace    = "ingress"      // Ingress namespace
 )
 
 // InitK8s initializes Kubernetes client
@@ -34,6 +40,11 @@ func InitK8s(kubeconfig string) error {
 	}
 
 	K8sClient, err = kubernetes.NewForConfig(config)
+	if err != nil {
+		return err
+	}
+
+	DynamicClient, err = dynamic.NewForConfig(config)
 	return err
 }
 
@@ -53,25 +64,25 @@ func UpdateUserConfig(userUID string) error {
 	configMapName := fmt.Sprintf("combinator-config-%s", userUID)
 
 	ctx := context.Background()
-	cm, err := K8sClient.CoreV1().ConfigMaps(Namespace).Get(ctx, configMapName, metav1.GetOptions{})
+	cm, err := K8sClient.CoreV1().ConfigMaps(CombinatorNamespace).Get(ctx, configMapName, metav1.GetOptions{})
 	if err != nil {
 		// Create new ConfigMap
 		cm = &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      configMapName,
-				Namespace: Namespace,
+				Namespace: CombinatorNamespace,
 			},
 			Data: map[string]string{
 				"config.json": string(configJSON),
 			},
 		}
-		_, err = K8sClient.CoreV1().ConfigMaps(Namespace).Create(ctx, cm, metav1.CreateOptions{})
+		_, err = K8sClient.CoreV1().ConfigMaps(CombinatorNamespace).Create(ctx, cm, metav1.CreateOptions{})
 		return err
 	}
 
 	// Update existing ConfigMap
 	cm.Data["config.json"] = string(configJSON)
-	_, err = K8sClient.CoreV1().ConfigMaps(Namespace).Update(ctx, cm, metav1.UpdateOptions{})
+	_, err = K8sClient.CoreV1().ConfigMaps(CombinatorNamespace).Update(ctx, cm, metav1.UpdateOptions{})
 	return err
 }
 
@@ -136,7 +147,7 @@ func CheckUserPodExists(userUID string) (bool, error) {
 	ctx := context.Background()
 	podName := fmt.Sprintf("combinator-%s", userUID)
 
-	_, err := K8sClient.CoreV1().Pods(Namespace).Get(ctx, podName, metav1.GetOptions{})
+	_, err := K8sClient.CoreV1().Pods(CombinatorNamespace).Get(ctx, podName, metav1.GetOptions{})
 	if err != nil {
 		// Pod doesn't exist
 		return false, nil
@@ -163,7 +174,7 @@ func CreateUserPod(userUID string) error {
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      podName,
-			Namespace: Namespace,
+			Namespace: CombinatorNamespace,
 			Labels: map[string]string{
 				"app":      "combinator",
 				"user-uid": userUID,
@@ -205,8 +216,27 @@ func CreateUserPod(userUID string) error {
 		},
 	}
 
-	_, err := K8sClient.CoreV1().Pods(Namespace).Create(ctx, pod, metav1.CreateOptions{})
-	return err
+	_, err := K8sClient.CoreV1().Pods(CombinatorNamespace).Create(ctx, pod, metav1.CreateOptions{})
+	if err != nil {
+		return err
+	}
+
+	// Create Service for the pod
+	if err := createCombinatorService(ctx, userUID); err != nil {
+		return fmt.Errorf("failed to create service: %w", err)
+	}
+
+	// Create ExternalName Service in ingress namespace
+	if err := createCombinatorExternalService(ctx, userUID); err != nil {
+		return fmt.Errorf("failed to create external service: %w", err)
+	}
+
+	// Create IngressRoute in ingress namespace
+	if err := createCombinatorIngressRoute(ctx, userUID); err != nil {
+		return fmt.Errorf("failed to create ingress route: %w", err)
+	}
+
+	return nil
 }
 
 // DeleteUserPod deletes a combinator pod for user
@@ -220,16 +250,155 @@ func DeleteUserPod(userUID string) error {
 	configMapName := fmt.Sprintf("combinator-config-%s", userUID)
 
 	// Delete Pod
-	err := K8sClient.CoreV1().Pods(Namespace).Delete(ctx, podName, metav1.DeleteOptions{})
+	err := K8sClient.CoreV1().Pods(CombinatorNamespace).Delete(ctx, podName, metav1.DeleteOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to delete pod: %w", err)
 	}
 
 	// Delete ConfigMap
-	err = K8sClient.CoreV1().ConfigMaps(Namespace).Delete(ctx, configMapName, metav1.DeleteOptions{})
+	err = K8sClient.CoreV1().ConfigMaps(CombinatorNamespace).Delete(ctx, configMapName, metav1.DeleteOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to delete configmap: %w", err)
 	}
 
+	// Delete Service
+	serviceName := fmt.Sprintf("combinator-%s", userUID)
+	K8sClient.CoreV1().Services(CombinatorNamespace).Delete(ctx, serviceName, metav1.DeleteOptions{})
+
+	// Delete ExternalName Service in ingress namespace
+	K8sClient.CoreV1().Services(IngressNamespace).Delete(ctx, serviceName, metav1.DeleteOptions{})
+
+	// Delete IngressRoute in ingress namespace
+	deleteIngressRoute(ctx, userUID)
+
 	return nil
+}
+
+// createCombinatorService creates a Service for the combinator pod
+func createCombinatorService(ctx context.Context, userUID string) error {
+	serviceName := fmt.Sprintf("combinator-%s", userUID)
+
+	service := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      serviceName,
+			Namespace: CombinatorNamespace,
+			Labels: map[string]string{
+				"app":      "combinator",
+				"user-uid": userUID,
+			},
+		},
+		Spec: corev1.ServiceSpec{
+			Selector: map[string]string{
+				"app":      "combinator",
+				"user-uid": userUID,
+			},
+			Ports: []corev1.ServicePort{
+				{
+					Name:     "http",
+					Port:     8899,
+					Protocol: corev1.ProtocolTCP,
+				},
+			},
+		},
+	}
+
+	_, err := K8sClient.CoreV1().Services(CombinatorNamespace).Create(ctx, service, metav1.CreateOptions{})
+	return err
+}
+
+// createCombinatorExternalService creates an ExternalName Service in ingress namespace
+func createCombinatorExternalService(ctx context.Context, userUID string) error {
+	serviceName := fmt.Sprintf("combinator-%s", userUID)
+	targetService := fmt.Sprintf("combinator-%s.%s.svc.cluster.local", userUID, CombinatorNamespace)
+
+	service := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      serviceName,
+			Namespace: IngressNamespace,
+			Labels: map[string]string{
+				"app":      "combinator",
+				"user-uid": userUID,
+			},
+		},
+		Spec: corev1.ServiceSpec{
+			Type:         corev1.ServiceTypeExternalName,
+			ExternalName: targetService,
+		},
+	}
+
+	_, err := K8sClient.CoreV1().Services(IngressNamespace).Create(ctx, service, metav1.CreateOptions{})
+	return err
+}
+
+// createCombinatorIngressRoute creates an IngressRoute in ingress namespace
+func createCombinatorIngressRoute(ctx context.Context, userUID string) error {
+	if DynamicClient == nil {
+		return fmt.Errorf("dynamic client not initialized")
+	}
+
+	ingressRouteName := fmt.Sprintf("combinator-%s", userUID)
+	serviceName := fmt.Sprintf("combinator-%s", userUID)
+
+	// Define IngressRoute GVR
+	ingressRouteGVR := schema.GroupVersionResource{
+		Group:    "traefik.io",
+		Version:  "v1alpha1",
+		Resource: "ingressroutes",
+	}
+
+	// Create IngressRoute object
+	ingressRoute := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"apiVersion": "traefik.io/v1alpha1",
+			"kind":       "IngressRoute",
+			"metadata": map[string]interface{}{
+				"name":      ingressRouteName,
+				"namespace": IngressNamespace,
+				"labels": map[string]interface{}{
+					"app":      "combinator",
+					"user-uid": userUID,
+				},
+			},
+			"spec": map[string]interface{}{
+				"entryPoints": []interface{}{"websecure"},
+				"routes": []interface{}{
+					map[string]interface{}{
+						"match": fmt.Sprintf("Host(`%s.combinator.${DOMAIN}`)", userUID),
+						"kind":  "Rule",
+						"services": []interface{}{
+							map[string]interface{}{
+								"name": serviceName,
+								"port": 8899,
+							},
+						},
+					},
+				},
+				"tls": map[string]interface{}{
+					"secretName": "ingress-tls",
+				},
+			},
+		},
+	}
+
+	_, err := DynamicClient.Resource(ingressRouteGVR).Namespace(IngressNamespace).Create(ctx, ingressRoute, metav1.CreateOptions{})
+	return err
+}
+
+// deleteIngressRoute deletes an IngressRoute in ingress namespace
+func deleteIngressRoute(ctx context.Context, userUID string) error {
+	if DynamicClient == nil {
+		return fmt.Errorf("dynamic client not initialized")
+	}
+
+	ingressRouteName := fmt.Sprintf("combinator-%s", userUID)
+
+	// Define IngressRoute GVR
+	ingressRouteGVR := schema.GroupVersionResource{
+		Group:    "traefik.io",
+		Version:  "v1alpha1",
+		Resource: "ingressroutes",
+	}
+
+	err := DynamicClient.Resource(ingressRouteGVR).Namespace(IngressNamespace).Delete(ctx, ingressRouteName, metav1.DeleteOptions{})
+	return err
 }
