@@ -3,8 +3,7 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: store
-
+  name: storebirth
 ---
 # PostgreSQL PersistentVolume (HostPath)
 apiVersion: v1
@@ -41,7 +40,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: postgres-init
-  namespace: storebi r t h
+  namespace: storebirth
 data:
   init.sql: |
     -- Control Plane Database Schema
