@@ -1,0 +1,47 @@
+# ============================================
+# Ingress 配置 (统一管理所有路由规则)
+# ============================================
+# 使用方法:
+# export DOMAIN=example.com
+# envsubst < ingress.yaml | kubectl apply -f -
+#
+# 注意: 需要先部署 k3s-deployment.yaml 创建服务
+# ============================================
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ingress
+# ============================================
+# Traefik 配置 (允许 ExternalName Services)
+# ============================================
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    providers:
+      kubernetesIngress:
+        allowExternalNameServices: true
+      kubernetesCRD:
+        allowExternalNameServices: true
+---
+# 在ingress命名空间也创建证书，供worker的IngressRoute使用
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: ingress-cert
+  namespace: ingress
+spec:
+  secretName: ingress-tls
+  issuerRef:
+    name: zerossl-prod
+    kind: ClusterIssuer
+  dnsNames:
+    - combinator.${DOMAIN}
+    - "*.combinator.${DOMAIN}"
+    - "*.s3.${DOMAIN}"
+

@@ -1,0 +1,51 @@
+-- Control Plane Database Schema
+
+-- Users table
+CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    uuid UUID DEFAULT gen_random_uuid() UNIQUE NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- User RDB resources
+CREATE TABLE IF NOT EXISTS user_rdbs (
+    id SERIAL PRIMARY KEY,
+    uuid UUID DEFAULT gen_random_uuid() UNIQUE NOT NULL,
+    user_id SERIAL NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    rdb_type VARCHAR(50) NOT NULL,
+    url TEXT NOT NULL,
+    enabled BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, uuid)
+);
+
+-- User KV resources
+CREATE TABLE IF NOT EXISTS user_kvs (
+    id SERIAL PRIMARY KEY,
+    user_id SERIAL NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    uuid UUID DEFAULT gen_random_uuid() UNIQUE NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    kv_type VARCHAR(50) NOT NULL,
+    url TEXT NOT NULL,
+    enabled BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, uuid)
+);
+
+-- Verification codes table
+CREATE TABLE IF NOT EXISTS verification_codes (
+    id SERIAL PRIMARY KEY,
+    email VARCHAR(255) NOT NULL,
+    code VARCHAR(6) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP NOT NULL,
+    used BOOLEAN DEFAULT false
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_user_rdbs_user_id ON user_rdbs(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_kvs_user_id ON user_kvs(user_id);
+CREATE INDEX IF NOT EXISTS idx_verification_codes_email ON verification_codes(email);

@@ -1,0 +1,272 @@
+# Control Plane Deployment for K3s
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: combinator
+
+---
+# PostgreSQL PersistentVolume (HostPath)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: postgres-pv
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  hostPath:
+    path: /home/ubuntu/control-plane-psql
+    type: DirectoryOrCreate
+
+---
+# PostgreSQL PersistentVolumeClaim
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+  namespace: combinator
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  volumeName: postgres-pv
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: combinator
+data:
+  init.sql: |
+    -- Control Plane Database Schema
+    CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        uuid UUID DEFAULT gen_random_uuid() UNIQUE NOT NULL,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        password_hash VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS user_rdbs (
+        id SERIAL PRIMARY KEY,
+        uuid UUID DEFAULT gen_random_uuid() UNIQUE NOT NULL,
+        user_id SERIAL NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name VARCHAR(255) NOT NULL,
+        rdb_type VARCHAR(50) NOT NULL,
+        url TEXT NOT NULL,
+        enabled BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, uuid)
+    );
+
+    CREATE TABLE IF NOT EXISTS user_kvs (
+        id SERIAL PRIMARY KEY,
+        user_id SERIAL NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        uuid UUID DEFAULT gen_random_uuid() UNIQUE NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        kv_type VARCHAR(50) NOT NULL,
+        url TEXT NOT NULL,
+        enabled BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, uuid)
+    );
+
+    CREATE TABLE IF NOT EXISTS verification_codes (
+        id SERIAL PRIMARY KEY,
+        email VARCHAR(255) NOT NULL,
+        code VARCHAR(6) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        expires_at TIMESTAMP NOT NULL,
+        used BOOLEAN DEFAULT false
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+    CREATE INDEX IF NOT EXISTS idx_user_rdbs_user_id ON user_rdbs(user_id);
+    CREATE INDEX IF NOT EXISTS idx_user_kvs_user_id ON user_kvs(user_id);
+    CREATE INDEX IF NOT EXISTS idx_verification_codes_email ON verification_codes(email);
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: combinator
+spec:
+  ports:
+  - port: 5432
+  selector:
+    app: postgres
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: combinator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15-alpine
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRES_DB
+          value: combfather
+        - name: POSTGRES_USER
+          value: postgres
+        - name: POSTGRES_PASSWORD
+          value: postgres
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/postgresql/data
+        - name: init
+          mountPath: /docker-entrypoint-initdb.d
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: postgres-pvc
+      - name: init
+        configMap:
+          name: postgres-init
+
+---
+# Control Plane Secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: control-plane-secret
+  namespace: combinator
+type: Opaque
+stringData:
+  jwt-secret: "change-me-in-production"
+
+---
+# Control Plane Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: control-plane
+  namespace: combinator
+spec:
+  type: NodePort
+  ports:
+  - port: 9900
+    targetPort: 9900
+    nodePort: 30900
+  selector:
+    app: control-plane
+
+---
+# Control Plane Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: control-plane
+  namespace: combinator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: control-plane
+  template:
+    metadata:
+      labels:
+        app: control-plane
+    spec:
+      serviceAccountName: control-plane-sa
+      containers:
+      - name: control-plane
+        image: control-plane:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 9900
+        env:
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: control-plane-secret
+              key: jwt-secret
+        - name: DATABASE_URL
+          value: "host=postgres port=5432 user=postgres password=postgres dbname=combfather sslmode=disable"
+        args:
+        - "-l"
+        - "0.0.0.0:9900"
+        - "-n"
+        - "combinator"
+
+---
+# ServiceAccount for Control Plane
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: control-plane-sa
+  namespace: combinator
+
+---
+# ClusterRole for managing pods and configmaps
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: control-plane-role
+rules:
+- apiGroups: [""]
+  resources: ["pods", "configmaps"]
+  verbs: ["get", "list", "create", "update", "delete"]
+
+---
+# ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: control-plane-binding
+subjects:
+- kind: ServiceAccount
+  name: control-plane-sa
+  namespace: combinator
+roleRef:
+  kind: ClusterRole
+  name: control-plane-role
+  apiGroup: rbac.authorization.k8s.io
+---
+# Distributor 管理端
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: distributor
+  namespace: ingress
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`combinator.${DOMAIN}`)
+      kind: Rule
+      services:
+        - name: combinator
+          port: 9900
+  tls:
+    secretName: ingress-tls
+---
+# ExternalName Service - 指向combinator命名空间的Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: combinator
+  namespace: ingress
+spec:
+  type: ExternalName
+  externalName: combinator.combinator.svc.cluster.local

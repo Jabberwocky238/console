@@ -1,0 +1,53 @@
+# ============================================
+# ZeroSSL Issuer 配置
+# ============================================
+# 前置步骤:
+# 1. 注册 ZeroSSL: https://app.zerossl.com/signup
+# 2. 获取 EAB Credentials: https://app.zerossl.com/developer
+# 3. 设置环境变量:
+#    export ZEROSSL_EAB_KID=your_eab_kid
+#    export ZEROSSL_EAB_HMAC_KEY=your_eab_hmac_key
+#    export CLOUDFLARE_API_TOKEN=your_cloudflare_token
+# 4. 部署:
+#    envsubst < zerossl-issuer.yaml | kubectl apply -f -
+# ============================================
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: zerossl-eab
+  namespace: cert-manager
+type: Opaque
+stringData:
+  secret: ${ZEROSSL_EAB_HMAC_KEY}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloudflare-api-token
+  namespace: cert-manager
+type: Opaque
+stringData:
+  api-token: ${CLOUDFLARE_API_TOKEN}
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: zerossl-prod
+spec:
+  acme:
+    server: https://acme.zerossl.com/v2/DV90
+    email: shadowsocks1984@gmail.com
+    privateKeySecretRef:
+      name: zerossl-prod-key
+    externalAccountBinding:
+      keyID: ${ZEROSSL_EAB_KID}
+      keySecretRef:
+        name: zerossl-eab
+        key: secret
+    solvers:
+      - dns01:
+          cloudflare:
+            apiTokenSecretRef:
+              name: cloudflare-api-token
+              key: api-token
