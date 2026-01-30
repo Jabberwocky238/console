@@ -10,6 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -184,10 +185,18 @@ func CreateUserPod(userUID string) error {
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{
 				{
-					Name:  "combinator",
-					Image: "ghcr.io/jabberwocky238/combinator:latest",
+					Name:            "combinator",
+					Image:           "ghcr.io/jabberwocky238/combinator:latest",
+					ImagePullPolicy: corev1.PullAlways,
 					Ports: []corev1.ContainerPort{
 						{ContainerPort: 8899, Name: "http"},
+					},
+					Args: []string{
+						"start",
+						"-c",
+						"/config/config.json",
+						"-l",
+						"0.0.0.0:8899",
 					},
 					Env: []corev1.EnvVar{
 						{Name: "USER_UID", Value: userUID},
@@ -198,6 +207,26 @@ func CreateUserPod(userUID string) error {
 							MountPath: "/config",
 							ReadOnly:  true,
 						},
+					},
+					LivenessProbe: &corev1.Probe{
+						ProbeHandler: corev1.ProbeHandler{
+							HTTPGet: &corev1.HTTPGetAction{
+								Path: "/health",
+								Port: intstr.FromInt(8899),
+							},
+						},
+						InitialDelaySeconds: 10,
+						PeriodSeconds:       10,
+					},
+					ReadinessProbe: &corev1.Probe{
+						ProbeHandler: corev1.ProbeHandler{
+							HTTPGet: &corev1.HTTPGetAction{
+								Path: "/health",
+								Port: intstr.FromInt(8899),
+							},
+						},
+						InitialDelaySeconds: 5,
+						PeriodSeconds:       5,
 					},
 				},
 			},

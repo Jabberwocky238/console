@@ -19,8 +19,8 @@ curl -O "https://raw.githubusercontent.com/jabberwocky238/storebirth/main/script
 # Deploy in order
 envsubst < zerossl-issuer.yaml | kubectl apply -f -
 envsubst < ingress.yaml | kubectl apply -f -
+envsubst < control-plane-deployment.yaml | kubectl apply -f -
 
-kubectl apply -f control-plane-deployment.yaml
 
 # Or delete by namespace
 kubectl delete namespace storebirth
