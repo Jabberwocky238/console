@@ -261,10 +261,6 @@
                     await handleKV(args);
                     break;
 
-                case 'combinator':
-                    await handleCombinator(args);
-                    break;
-
                 case 'status':
                     showStatus();
                     break;
@@ -297,9 +293,6 @@
             print('  kv list                 - List all KV resources');
             print('  kv add                  - Add a new KV resource');
             print('  kv delete <id>          - Delete a KV resource');
-            print('');
-            print('  combinator add <userid> - Create a combinator pod');
-            print('  combinator delete <id>  - Delete a combinator pod');
             print('');
         }
 
@@ -529,59 +522,6 @@
                 print('KV deleted successfully', 'success');
             } catch (error) {
                 print(`Failed to delete KV: ${error.message}`, 'error');
-            }
-        }
-
-        async function handleCombinator(args) {
-            if (!token) {
-                print('Please login first', 'error');
-                return;
-            }
-
-            const subcommand = args[0];
-
-            switch (subcommand) {
-                case 'add':
-                    if (!args[1]) {
-                        print('Usage: combinator add <userid>', 'error');
-                        return;
-                    }
-                    await addCombinator(args[1]);
-                    break;
-
-                case 'delete':
-                    if (!args[1]) {
-                        print('Usage: combinator delete <userid>', 'error');
-                        return;
-                    }
-                    await deleteCombinator(args[1]);
-                    break;
-
-                default:
-                    print('Usage: combinator [add|delete] <userid>', 'error');
-            }
-        }
-
-        async function addCombinator(userid) {
-            try {
-                const result = await apiCall('/api/combinator', 'POST', { userid });
-                print('', 'success');
-                print('Combinator created successfully!', 'success');
-                print(`User ID: ${result.user_id}`, 'info');
-                print(`Pod Name: ${result.pod_name}`, 'info');
-                print(`RDB ID: ${result.rdb_id}`, 'info');
-                print(`KV ID: ${result.kv_id}`, 'info');
-            } catch (error) {
-                print(`Failed to create combinator: ${error.message}`, 'error');
-            }
-        }
-
-        async function deleteCombinator(userid) {
-            try {
-                await apiCall('/api/combinator', 'DELETE', { userid });
-                print('Combinator deleted successfully', 'success');
-            } catch (error) {
-                print(`Failed to delete combinator: ${error.message}`, 'error');
             }
         }
 

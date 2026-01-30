@@ -18,9 +18,9 @@ import (
 var (
 	K8sClient           *kubernetes.Clientset
 	DynamicClient       dynamic.Interface
-	Namespace           = "storebirth"   // Control plane namespace
-	CombinatorNamespace = "combinator"   // Combinator pods namespace
-	IngressNamespace    = "ingress"      // Ingress namespace
+	Namespace           = "storebirth" // Control plane namespace
+	CombinatorNamespace = "combinator" // Combinator pods namespace
+	IngressNamespace    = "ingress"    // Ingress namespace
 )
 
 // InitK8s initializes Kubernetes client
@@ -184,7 +184,7 @@ func CreateUserPod(userUID string) error {
 			Containers: []corev1.Container{
 				{
 					Name:  "combinator",
-					Image: "combinator:latest",
+					Image: "ghcr.io/jabberwocky238/combinator:latest",
 					Ports: []corev1.ContainerPort{
 						{ContainerPort: 8899, Name: "http"},
 					},

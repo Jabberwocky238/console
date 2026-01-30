@@ -63,8 +63,6 @@ func main() {
 		api.POST("/kv", CreateKV)
 		api.GET("/kv", ListKVs)
 		api.DELETE("/kv/:id", DeleteKV)
-		api.POST("/combinator", AddCombinator)
-		api.DELETE("/combinator", DeleteCombinator)
 	}
 
 	// Start server
