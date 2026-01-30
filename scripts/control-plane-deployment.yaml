@@ -214,14 +214,17 @@ metadata:
   name: control-plane-sa
   namespace: storebirth
 ---
-# ClusterRole for managing pods and configmaps
+# ClusterRole for managing pods, configmaps, services, and ingressroutes
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: control-plane-role
 rules:
 - apiGroups: [""]
-  resources: ["pods", "configmaps"]
+  resources: ["pods", "configmaps", "services"]
+  verbs: ["get", "list", "create", "update", "delete"]
+- apiGroups: ["traefik.io"]
+  resources: ["ingressroutes"]
   verbs: ["get", "list", "create", "update", "delete"]
 
 ---
