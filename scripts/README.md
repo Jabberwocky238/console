@@ -55,7 +55,7 @@ kubectl get all -n ingress
 # View logs
 kubectl logs -f deployment/control-plane -n storebirth
 kubectl logs -f deployment/postgres -n storebirth
-
+kubectl logs combinator-jabberwocky7545 -n combinator
 # Describe resources for troubleshooting
 kubectl describe pod -l app=control-plane -n storebirth
 kubectl describe pod -l app=postgres -n storebirth

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -339,6 +340,12 @@ func createCombinatorIngressRoute(ctx context.Context, userUID string) error {
 	ingressRouteName := fmt.Sprintf("combinator-%s", userUID)
 	serviceName := fmt.Sprintf("combinator-%s", userUID)
 
+	// Get domain from environment variable
+	domain := os.Getenv("DOMAIN")
+	if domain == "" {
+		domain = "example.com" // fallback default
+	}
+
 	// Define IngressRoute GVR
 	ingressRouteGVR := schema.GroupVersionResource{
 		Group:    "traefik.io",
@@ -363,7 +370,7 @@ func createCombinatorIngressRoute(ctx context.Context, userUID string) error {
 				"entryPoints": []interface{}{"websecure"},
 				"routes": []interface{}{
 					map[string]interface{}{
-						"match": fmt.Sprintf("Host(`%s.combinator.${DOMAIN}`)", userUID),
+						"match": fmt.Sprintf("Host(`%s.combinator.%s`)", userUID, domain),
 						"kind":  "Rule",
 						"services": []interface{}{
 							map[string]interface{}{

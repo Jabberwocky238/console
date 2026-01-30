@@ -201,6 +201,8 @@ spec:
             secretKeyRef:
               name: control-plane-secret
               key: jwt-secret
+        - name: DOMAIN
+          value: "${DOMAIN}"
         args:
         - "-l"
         - "0.0.0.0:9900"

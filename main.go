@@ -22,6 +22,13 @@ func main() {
 	}
 	JWTSecret = []byte(jwtSecret)
 
+	// Check DOMAIN environment variable (required for IngressRoute creation)
+	domain := os.Getenv("DOMAIN")
+	if domain == "" {
+		log.Fatal("DOMAIN environment variable is required")
+	}
+	log.Printf("Using domain: %s", domain)
+
 	// Initialize database
 	if err := InitDB(*dbDSN); err != nil {
 		log.Fatal("Failed to connect to database:", err)
