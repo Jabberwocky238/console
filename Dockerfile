@@ -22,6 +22,7 @@ WORKDIR /app
 
 COPY --from=builder /app/control-plane .
 COPY --from=builder /app/scripts/init.sql ./scripts/
+COPY --from=builder /app/index.html .
 
 EXPOSE 9900
 

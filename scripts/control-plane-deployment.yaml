@@ -5,11 +5,6 @@ kind: Namespace
 metadata:
   name: storebirth
 ---
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: combinator
----
 # PostgreSQL PersistentVolume (HostPath)
 apiVersion: v1
 kind: PersistentVolume
@@ -21,6 +16,7 @@ spec:
   accessModes:
     - ReadWriteOnce
   persistentVolumeReclaimPolicy: Retain
+  storageClassName: manual
   hostPath:
     path: /home/ubuntu/control-plane-psql
     type: DirectoryOrCreate
@@ -35,10 +31,10 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
+  storageClassName: manual
   resources:
     requests:
       storage: 10Gi
-  volumeName: postgres-pv
 
 ---
 apiVersion: v1
@@ -195,8 +191,8 @@ spec:
       serviceAccountName: control-plane-sa
       containers:
       - name: control-plane
-        image: control-plane:latest
-        imagePullPolicy: IfNotPresent
+        image: ghcr.io/jabberwocky238/storebirth:latest
+        imagePullPolicy: Always
         ports:
         - containerPort: 9900
         env:
