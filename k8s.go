@@ -1,10 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -79,13 +83,46 @@ func UpdateUserConfig(userUID string) error {
 			},
 		}
 		_, err = K8sClient.CoreV1().ConfigMaps(CombinatorNamespace).Create(ctx, cm, metav1.CreateOptions{})
-		return err
+		if err != nil {
+			return err
+		}
+	} else {
+		// Update existing ConfigMap
+		cm.Data["config.json"] = string(configJSON)
+		_, err = K8sClient.CoreV1().ConfigMaps(CombinatorNamespace).Update(ctx, cm, metav1.UpdateOptions{})
+		if err != nil {
+			return err
+		}
 	}
 
-	// Update existing ConfigMap
-	cm.Data["config.json"] = string(configJSON)
-	_, err = K8sClient.CoreV1().ConfigMaps(CombinatorNamespace).Update(ctx, cm, metav1.UpdateOptions{})
-	return err
+	// Call combinator's /reload API to reload config without restart
+	return reloadCombinatorConfig(userUID, configJSON)
+}
+
+// reloadCombinatorConfig calls combinator's /reload API to reload config
+func reloadCombinatorConfig(userUID string, configJSON []byte) error {
+	// Get combinator service URL
+	serviceName := fmt.Sprintf("combinator-%s", userUID)
+	serviceURL := fmt.Sprintf("http://%s.%s.svc.cluster.local:8899/reload", serviceName, CombinatorNamespace)
+
+	// Create HTTP client with timeout
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+
+	// Send POST request to /reload endpoint
+	resp, err := client.Post(serviceURL, "application/json", bytes.NewReader(configJSON))
+	if err != nil {
+		return fmt.Errorf("failed to call reload API: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("reload API returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
 }
 
 // generateConfig generates combinator config for user
@@ -197,6 +234,8 @@ func CreateUserPod(userUID string) error {
 						"/config/config.json",
 						"-l",
 						"0.0.0.0:8899",
+						"--watch",
+						"api",
 					},
 					Env: []corev1.EnvVar{
 						{Name: "USER_UID", Value: userUID},
