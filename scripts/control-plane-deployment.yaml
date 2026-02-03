@@ -61,6 +61,8 @@ data:
         rdb_type VARCHAR(50) NOT NULL,
         url TEXT NOT NULL,
         enabled BOOLEAN DEFAULT true,
+        status VARCHAR(16) NOT NULL DEFAULT 'pending',
+        error_msg TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(user_id, uid)
     );
@@ -73,6 +75,8 @@ data:
         kv_type VARCHAR(50) NOT NULL,
         url TEXT NOT NULL,
         enabled BOOLEAN DEFAULT true,
+        status VARCHAR(16) NOT NULL DEFAULT 'pending',
+        error_msg TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(user_id, uid)
     );
