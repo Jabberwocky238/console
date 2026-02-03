@@ -40,10 +40,6 @@ func main() {
 		log.Println("K8s client initialized")
 	}
 
-	// Start background task worker
-	k8s.StartWorker()
-	defer k8s.StopWorker()
-
 	log.Println("Control plane starting...")
 
 	// Setup Gin router
@@ -71,7 +67,6 @@ func main() {
 		api.POST("/kv", handlers.CreateKV)
 		api.GET("/kv", handlers.ListKVs)
 		api.DELETE("/kv/:id", handlers.DeleteKV)
-		api.GET("/task/:id", handlers.GetTaskStatus)
 	}
 
 	// Start server

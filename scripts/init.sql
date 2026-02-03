@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS user_rdbs (
     rdb_type VARCHAR(50) NOT NULL,
     url TEXT NOT NULL,
     enabled BOOLEAN DEFAULT true,
+    status VARCHAR(16) NOT NULL DEFAULT 'pending',  -- pending, active, error
+    error_msg TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(user_id, uid)
 );
@@ -31,6 +33,8 @@ CREATE TABLE IF NOT EXISTS user_kvs (
     kv_type VARCHAR(50) NOT NULL,
     url TEXT NOT NULL,
     enabled BOOLEAN DEFAULT true,
+    status VARCHAR(16) NOT NULL DEFAULT 'pending',  -- pending, active, error
+    error_msg TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(user_id, uid)
 );
@@ -45,20 +49,9 @@ CREATE TABLE IF NOT EXISTS verification_codes (
     used BOOLEAN DEFAULT false
 );
 
--- Config sync tasks table (async task queue)
-CREATE TABLE IF NOT EXISTS config_tasks (
-    id SERIAL PRIMARY KEY,
-    user_uid VARCHAR(64) NOT NULL,
-    task_type VARCHAR(32) NOT NULL,  -- 'config_update', 'pod_create', etc.
-    status VARCHAR(16) NOT NULL DEFAULT 'pending',  -- pending, processing, completed, failed
-    error_msg TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_user_rdbs_user_id ON user_rdbs(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_rdbs_status ON user_rdbs(status);
 CREATE INDEX IF NOT EXISTS idx_user_kvs_user_id ON user_kvs(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_kvs_status ON user_kvs(status);
 CREATE INDEX IF NOT EXISTS idx_verification_codes_email ON verification_codes(email);
-CREATE INDEX IF NOT EXISTS idx_config_tasks_status ON config_tasks(status);
-CREATE INDEX IF NOT EXISTS idx_config_tasks_user ON config_tasks(user_uid);

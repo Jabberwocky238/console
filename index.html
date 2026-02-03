@@ -400,11 +400,15 @@
                 print('=== RDB Resources ===', 'info');
                 if (result.rdbs && result.rdbs.length > 0) {
                     result.rdbs.forEach(rdb => {
+                        const statusClass = rdb.status === 'active' ? 'success' : (rdb.status === 'error' ? 'error' : 'warning');
                         print(`ID: ${rdb.id}`, 'success');
                         print(`  Name: ${rdb.name}`);
                         print(`  Type: ${rdb.rdb_type}`);
                         print(`  URL: ${rdb.url}`);
-                        print(`  Enabled: ${rdb.enabled}`);
+                        print(`  Status: ${rdb.status}`, statusClass);
+                        if (rdb.error_msg) {
+                            print(`  Error: ${rdb.error_msg}`, 'error');
+                        }
                         print('');
                     });
                 } else {
@@ -428,8 +432,12 @@
                 });
 
                 print('', 'success');
-                print('RDB created successfully!', 'success');
                 print(`ID: ${result.id}`, 'info');
+                if (result.error) {
+                    print(result.error, 'warning');
+                } else {
+                    print(result.message, 'success');
+                }
             } catch (error) {
                 print(`Failed to create RDB: ${error.message}`, 'error');
             }
@@ -481,11 +489,15 @@
                 print('=== KV Resources ===', 'info');
                 if (result.kvs && result.kvs.length > 0) {
                     result.kvs.forEach(kv => {
+                        const statusClass = kv.status === 'active' ? 'success' : (kv.status === 'error' ? 'error' : 'warning');
                         print(`ID: ${kv.id}`, 'success');
                         print(`  Name: ${kv.name}`);
                         print(`  Type: ${kv.kv_type}`);
                         print(`  URL: ${kv.url}`);
-                        print(`  Enabled: ${kv.enabled}`);
+                        print(`  Status: ${kv.status}`, statusClass);
+                        if (kv.error_msg) {
+                            print(`  Error: ${kv.error_msg}`, 'error');
+                        }
                         print('');
                     });
                 } else {
@@ -509,8 +521,12 @@
                 });
 
                 print('', 'success');
-                print('KV created successfully!', 'success');
                 print(`ID: ${result.id}`, 'info');
+                if (result.error) {
+                    print(result.error, 'warning');
+                } else {
+                    print(result.message, 'success');
+                }
             } catch (error) {
                 print(`Failed to create KV: ${error.message}`, 'error');
             }

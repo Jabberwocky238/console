@@ -79,7 +79,7 @@ func CreateRDB(userUID, rdbUID, name, rdbType, url string) (string, error) {
 // ListRDBsByUser 获取用户的所有 RDB
 func ListRDBsByUser(userUID string) ([]RDB, error) {
 	rows, err := DB.Query(
-		`SELECT uid, name, rdb_type, url, enabled FROM user_rdbs
+		`SELECT uid, name, rdb_type, url, enabled, status, COALESCE(error_msg, '') FROM user_rdbs
 		 WHERE user_id = (SELECT id FROM users WHERE uid = $1)`,
 		userUID,
 	)
@@ -91,7 +91,7 @@ func ListRDBsByUser(userUID string) ([]RDB, error) {
 	var rdbs []RDB
 	for rows.Next() {
 		var r RDB
-		rows.Scan(&r.UID, &r.Name, &r.Type, &r.URL, &r.Enabled)
+		rows.Scan(&r.UID, &r.Name, &r.Type, &r.URL, &r.Enabled, &r.Status, &r.ErrorMsg)
 		rdbs = append(rdbs, r)
 	}
 	return rdbs, nil
@@ -127,7 +127,7 @@ func CreateKV(userUID, kvUID, name, kvType, url string) (string, error) {
 // ListKVsByUser 获取用户的所有 KV
 func ListKVsByUser(userUID string) ([]KV, error) {
 	rows, err := DB.Query(
-		`SELECT uid, name, kv_type, url, enabled FROM user_kvs
+		`SELECT uid, name, kv_type, url, enabled, status, COALESCE(error_msg, '') FROM user_kvs
 		 WHERE user_id = (SELECT id FROM users WHERE uid = $1)`,
 		userUID,
 	)
@@ -139,7 +139,7 @@ func ListKVsByUser(userUID string) ([]KV, error) {
 	var kvs []KV
 	for rows.Next() {
 		var k KV
-		rows.Scan(&k.UID, &k.Name, &k.Type, &k.URL, &k.Enabled)
+		rows.Scan(&k.UID, &k.Name, &k.Type, &k.URL, &k.Enabled, &k.Status, &k.ErrorMsg)
 		kvs = append(kvs, k)
 	}
 	return kvs, nil
@@ -158,75 +158,21 @@ func DeleteKV(kvUID, userUID string) (int64, error) {
 	return result.RowsAffected()
 }
 
-// ========== Task Actions ==========
-
-// EnqueueConfigTask 添加配置更新任务
-func EnqueueConfigTask(userUID string) (int, error) {
-	var taskID int
-	err := DB.QueryRow(`
-		INSERT INTO config_tasks (user_uid, task_type, status)
-		VALUES ($1, 'config_update', 'pending')
-		RETURNING id
-	`, userUID).Scan(&taskID)
-	return taskID, err
-}
-
-// EnqueuePodCreateTask 添加 Pod 创建任务
-func EnqueuePodCreateTask(userUID string) (int, error) {
-	var taskID int
-	err := DB.QueryRow(`
-		INSERT INTO config_tasks (user_uid, task_type, status)
-		VALUES ($1, 'pod_create', 'pending')
-		RETURNING id
-	`, userUID).Scan(&taskID)
-	return taskID, err
-}
-
-// GetTaskStatus 获取任务状态
-func GetTaskStatus(taskID int) (string, string, error) {
-	var status, errorMsg string
-	err := DB.QueryRow(`
-		SELECT status, COALESCE(error_msg, '') FROM config_tasks WHERE id = $1
-	`, taskID).Scan(&status, &errorMsg)
-	return status, errorMsg, err
-}
-
-// FetchPendingTask 获取并锁定一个待处理任务
-func FetchPendingTask() (int, string, string, error) {
-	var taskID int
-	var userUID, taskType string
-	err := DB.QueryRow(`
-		UPDATE config_tasks
-		SET status = 'processing', updated_at = NOW()
-		WHERE id = (
-			SELECT id FROM config_tasks
-			WHERE status = 'pending'
-			ORDER BY created_at ASC
-			LIMIT 1
-			FOR UPDATE SKIP LOCKED
-		)
-		RETURNING id, user_uid, task_type
-	`).Scan(&taskID, &userUID, &taskType)
-	return taskID, userUID, taskType, err
-}
-
-// MarkTaskFailed 标记任务失败
-func MarkTaskFailed(taskID int, errMsg string) error {
-	_, err := DB.Exec(`
-		UPDATE config_tasks
-		SET status = 'failed', error_msg = $1, updated_at = NOW()
-		WHERE id = $2
-	`, errMsg, taskID)
+// SetRDBStatus 设置 RDB 状态
+func SetRDBStatus(rdbUID, status, errorMsg string) error {
+	_, err := DB.Exec(
+		`UPDATE user_rdbs SET status = $1, error_msg = $2 WHERE uid = $3`,
+		status, errorMsg, rdbUID,
+	)
 	return err
 }
 
-// MarkTaskCompleted 标记任务完成
-func MarkTaskCompleted(taskID int) error {
-	_, err := DB.Exec(`
-		UPDATE config_tasks
-		SET status = 'completed', updated_at = NOW()
-		WHERE id = $1
-	`, taskID)
+// SetKVStatus 设置 KV 状态
+func SetKVStatus(kvUID, status, errorMsg string) error {
+	_, err := DB.Exec(
+		`UPDATE user_kvs SET status = $1, error_msg = $2 WHERE uid = $3`,
+		status, errorMsg, kvUID,
+	)
 	return err
 }
 

@@ -20,19 +20,19 @@ import (
 )
 
 // UpdateCombinatorConfig updates ConfigMap for Combinator's combinator pod
-func UpdateCombinatorConfig(CombinatorUID string) error {
+func UpdateCombinatorConfig(userUID string) error {
 	if K8sClient == nil {
 		return fmt.Errorf("k8s client not initialized")
 	}
 
 	// Generate config
-	config, err := generateConfig(CombinatorUID)
+	config, err := generateCombinatorConfig(userUID)
 	if err != nil {
 		return err
 	}
 
 	configJSON, _ := json.MarshalIndent(config, "", "  ")
-	configMapName := fmt.Sprintf("combinator-config-%s", CombinatorUID)
+	configMapName := fmt.Sprintf("combinator-config-%s", userUID)
 
 	ctx := context.Background()
 	cm, err := K8sClient.CoreV1().ConfigMaps(CombinatorNamespace).Get(ctx, configMapName, metav1.GetOptions{})
@@ -52,7 +52,7 @@ func UpdateCombinatorConfig(CombinatorUID string) error {
 	}
 
 	// Pod exists, call /reload API first to validate config
-	if err := reloadCombinatorConfig(CombinatorUID, configJSON); err != nil {
+	if err := reloadCombinatorConfig(userUID, configJSON); err != nil {
 		return fmt.Errorf("reload failed: %w", err)
 	}
 
@@ -63,9 +63,9 @@ func UpdateCombinatorConfig(CombinatorUID string) error {
 }
 
 // generateConfig generates combinator config for Combinator
-func generateConfig(CombinatorUID string) (map[string]any, error) {
+func generateCombinatorConfig(userUID string) (map[string]any, error) {
 	// Get RDBs
-	rdbItems, err := dblayer.GetUserRDBsForConfig(CombinatorUID)
+	rdbItems, err := dblayer.GetUserRDBsForConfig(userUID)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +80,7 @@ func generateConfig(CombinatorUID string) (map[string]any, error) {
 	}
 
 	// Get KVs
-	kvItems, err := dblayer.GetUserKVsForConfig(CombinatorUID)
+	kvItems, err := dblayer.GetUserKVsForConfig(userUID)
 	if err != nil {
 		return nil, err
 	}
