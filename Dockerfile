@@ -11,7 +11,7 @@ RUN go mod download
 COPY . .
 
 # Build
-RUN CGO_ENABLED=0 GOOS=linux go build -o control-plane .
+RUN CGO_ENABLED=0 GOOS=linux go build -o control-plane ./cmd
 
 # Runtime stage
 FROM alpine:latest
