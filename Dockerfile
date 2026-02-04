@@ -11,7 +11,7 @@ RUN go mod download
 COPY . .
 
 # Build
-RUN CGO_ENABLED=0 GOOS=linux go build -o control-plane .
+RUN CGO_ENABLED=0 GOOS=linux go build -o control-plane ./cmd
 
 # Runtime stage
 FROM alpine:latest
@@ -23,6 +23,7 @@ WORKDIR /app
 COPY --from=builder /app/control-plane .
 COPY --from=builder /app/scripts/init.sql ./scripts/
 COPY --from=builder /app/index.html .
+COPY --from=builder /app/index.js .
 
 EXPOSE 9900
 

@@ -1,6 +1,6 @@
-# StoreBirth Deployment Guide
+# Console Deployment Guide
 
-This guide will walk you through deploying the StoreBirth control plane on a K3s cluster.
+This guide will walk you through deploying the Console control plane on a K3s cluster.
 
 ## Quick Start - Download Configuration Files
 
@@ -12,9 +12,9 @@ Download all required configuration files first:
 # Download all configuration files
 kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
 kubectl wait --for=condition=ready pod -l app.kubernetes.io/instance=cert-manager -n cert-manager --timeout=300s
-curl -O "https://raw.githubusercontent.com/jabberwocky238/storebirth/main/scripts/zerossl-issuer.yaml"
-curl -O "https://raw.githubusercontent.com/jabberwocky238/storebirth/main/scripts/ingress.yaml"
-curl -O "https://raw.githubusercontent.com/jabberwocky238/storebirth/main/scripts/control-plane-deployment.yaml"
+curl -O "https://raw.githubusercontent.com/jabberwocky238/console/main/scripts/zerossl-issuer.yaml"
+curl -O "https://raw.githubusercontent.com/jabberwocky238/console/main/scripts/ingress.yaml"
+curl -O "https://raw.githubusercontent.com/jabberwocky238/console/main/scripts/control-plane-deployment.yaml"
 
 # Deploy in order
 envsubst < zerossl-issuer.yaml | kubectl apply -f -
@@ -23,50 +23,50 @@ envsubst < control-plane-deployment.yaml | kubectl apply -f -
 
 
 # Or delete by namespace
-kubectl delete namespace storebirth
+kubectl delete namespace console
 kubectl delete namespace ingress
 ```
 
 ### Rollout and Restart Commands
 ```bash
 # Restart control plane
-kubectl rollout restart deployment/control-plane -n storebirth
+kubectl rollout restart deployment/control-plane -n console
 
 # Restart PostgreSQL
-kubectl rollout restart deployment/postgres -n storebirth
+kubectl rollout restart deployment/postgres -n console
 
 # Check rollout status
-kubectl rollout status deployment/control-plane -n storebirth
-kubectl rollout status deployment/postgres -n storebirth
+kubectl rollout status deployment/control-plane -n console
+kubectl rollout status deployment/postgres -n console
 
 # Rollback to previous version
-kubectl rollout undo deployment/control-plane -n storebirth
+kubectl rollout undo deployment/control-plane -n console
 
 # View rollout history
-kubectl rollout history deployment/control-plane -n storebirth
+kubectl rollout history deployment/control-plane -n console
 ```
 
 ### Quick Debug Commands
 ```bash
 # View all resources
-kubectl get all -n storebirth
+kubectl get all -n console
 kubectl get all -n ingress
 
 # View logs
-kubectl logs -f deployment/control-plane -n storebirth
-kubectl logs -f deployment/postgres -n storebirth
+kubectl logs -f deployment/control-plane -n console
+kubectl logs -f deployment/postgres -n console
 kubectl logs combinator-jabberwocky7545 -n combinator
 # Describe resources for troubleshooting
-kubectl describe pod -l app=control-plane -n storebirth
-kubectl describe pod -l app=postgres -n storebirth
+kubectl describe pod -l app=control-plane -n console
+kubectl describe pod -l app=postgres -n console
 
 # Execute commands in pods
-kubectl exec -it deployment/control-plane -n storebirth -- sh
-kubectl exec -it deployment/postgres -n storebirth -- psql -U postgres -d combfather
+kubectl exec -it deployment/control-plane -n console -- sh
+kubectl exec -it deployment/postgres -n console -- psql -U postgres -d combfather
 
 # Port forward for local testing
-kubectl port-forward -n storebirth svc/control-plane 9900:9900
-kubectl port-forward -n storebirth svc/postgres 5432:5432
+kubectl port-forward -n console svc/control-plane 9900:9900
+kubectl port-forward -n console svc/postgres 5432:5432
 ```
 
 ---
@@ -118,12 +118,12 @@ The PostgreSQL database is configured with:
 The control plane runs with:
 - **Port**: 9900
 - **JWT Secret**: `change-me-in-production` (⚠️ Change in production!)
-- **Namespace**: `storebirth`
+- **Namespace**: `console`
 
 ### SSL Certificates
 
 Certificates are automatically issued for:
-- `storebirth.${DOMAIN}` - Control plane
+- `console.${DOMAIN}` - Control plane
 - `*.combinator.${DOMAIN}` - Combinator pods
 - `*.s3.${DOMAIN}` - S3-compatible storage (future)
 
@@ -159,8 +159,8 @@ env:
 
 Check pod logs:
 ```bash
-kubectl logs -n storebirth -l app=control-plane
-kubectl logs -n storebirth -l app=postgres
+kubectl logs -n console -l app=control-plane
+kubectl logs -n console -l app=postgres
 ```
 
 ### Certificate not issued
@@ -180,20 +180,20 @@ kubectl logs -n cert-manager -l app=cert-manager
 
 Check if PostgreSQL is running:
 ```bash
-kubectl exec -it -n storebirth deployment/postgres -- psql -U postgres -d combfather -c "\dt"
+kubectl exec -it -n console deployment/postgres -- psql -U postgres -d combfather -c "\dt"
 ```
 
 ### Control plane not accessible
 
 Check service and ingress:
 ```bash
-kubectl get svc -n storebirth control-plane
+kubectl get svc -n console control-plane
 kubectl get ingressroute -n ingress distributor
 ```
 
 Test internal connectivity:
 ```bash
-kubectl run -it --rm debug --image=curlimages/curl --restart=Never -- curl http://control-plane.storebirth.svc.cluster.local:9900
+kubectl run -it --rm debug --image=curlimages/curl --restart=Never -- curl http://control-plane.console.svc.cluster.local:9900
 ```
 
 ## Updating the Deployment
@@ -208,14 +208,14 @@ docker build -t control-plane:latest .
 docker save control-plane:latest | sudo k3s ctr images import -
 
 # Restart deployment
-kubectl rollout restart deployment/control-plane -n storebirth
+kubectl rollout restart deployment/control-plane -n console
 ```
 
 ### Update database schema
 
 ```bash
 # Connect to PostgreSQL
-kubectl exec -it -n storebirth deployment/postgres -- psql -U postgres -d combfather
+kubectl exec -it -n console deployment/postgres -- psql -U postgres -d combfather
 
 # Run your SQL commands
 # ...
@@ -226,13 +226,13 @@ kubectl exec -it -n storebirth deployment/postgres -- psql -U postgres -d combfa
 ### Backup PostgreSQL data
 
 ```bash
-kubectl exec -n storebirth deployment/postgres -- pg_dump -U postgres combfather > backup.sql
+kubectl exec -n console deployment/postgres -- pg_dump -U postgres combfather > backup.sql
 ```
 
 ### Restore PostgreSQL data
 
 ```bash
-cat backup.sql | kubectl exec -i -n storebirth deployment/postgres -- psql -U postgres combfather
+cat backup.sql | kubectl exec -i -n console deployment/postgres -- psql -U postgres combfather
 ```
 
 ## Uninstalling
@@ -277,7 +277,7 @@ Once deployed, the following endpoints are available:
 
 After deployment:
 
-1. Access the web interface at `https://storebirth.yourdomain.com`
+1. Access the web interface at `https://console.yourdomain.com`
 2. Register a new account using the terminal interface
 3. Create RDB and KV resources
 4. Deploy combinator pods for data processing

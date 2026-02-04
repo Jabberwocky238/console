@@ -1,4 +1,4 @@
-module jabberwocky238/storebirth
+module jabberwocky238/console
 
 go 1.25.3
 

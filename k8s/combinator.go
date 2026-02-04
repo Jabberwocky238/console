@@ -7,15 +7,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"time"
 
-	"jabberwocky238/storebirth/dblayer"
+	"jabberwocky238/console/dblayer"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
@@ -358,19 +356,6 @@ func createCombinatorIngressRoute(ctx context.Context, CombinatorUID string) err
 	ingressRouteName := fmt.Sprintf("combinator-%s", CombinatorUID)
 	serviceName := fmt.Sprintf("combinator-%s", CombinatorUID)
 
-	// Get domain from environment variable
-	domain := os.Getenv("DOMAIN")
-	if domain == "" {
-		domain = "example.com" // fallback default
-	}
-
-	// Define IngressRoute GVR
-	ingressRouteGVR := schema.GroupVersionResource{
-		Group:    "traefik.io",
-		Version:  "v1alpha1",
-		Resource: "ingressroutes",
-	}
-
 	// Create IngressRoute object
 	ingressRoute := &unstructured.Unstructured{
 		Object: map[string]interface{}{
@@ -388,7 +373,7 @@ func createCombinatorIngressRoute(ctx context.Context, CombinatorUID string) err
 				"entryPoints": []interface{}{"websecure"},
 				"routes": []interface{}{
 					map[string]interface{}{
-						"match": fmt.Sprintf("Host(`%s.combinator.%s`)", CombinatorUID, domain),
+						"match": fmt.Sprintf("Host(`%s.combinator.%s`)", CombinatorUID, Domain),
 						"kind":  "Rule",
 						"services": []interface{}{
 							map[string]interface{}{
@@ -416,13 +401,6 @@ func deleteIngressRoute(ctx context.Context, CombinatorUID string) error {
 	}
 
 	ingressRouteName := fmt.Sprintf("combinator-%s", CombinatorUID)
-
-	// Define IngressRoute GVR
-	ingressRouteGVR := schema.GroupVersionResource{
-		Group:    "traefik.io",
-		Version:  "v1alpha1",
-		Resource: "ingressroutes",
-	}
 
 	err := DynamicClient.Resource(ingressRouteGVR).Namespace(IngressNamespace).Delete(ctx, ingressRouteName, metav1.DeleteOptions{})
 	return err

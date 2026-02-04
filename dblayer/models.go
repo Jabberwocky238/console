@@ -45,3 +45,16 @@ type VerificationCode struct {
 	ExpiresAt time.Time `json:"expires_at"`
 	Used      bool      `json:"used"`
 }
+
+// Worker model
+type Worker struct {
+	ID        int       `json:"-"`
+	WorkerID  string    `json:"worker_id"`
+	OwnerID   string    `json:"owner_id"`
+	Image     string    `json:"image"`
+	Port      int       `json:"port"`
+	Status    string    `json:"status"`
+	ErrorMsg  string    `json:"error_msg,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}

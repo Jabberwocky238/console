@@ -1,8 +1,8 @@
 package handlers
 
 import (
-	"jabberwocky238/storebirth/dblayer"
-	"jabberwocky238/storebirth/k8s"
+	"jabberwocky238/console/dblayer"
+	"jabberwocky238/console/k8s"
 
 	"github.com/gin-gonic/gin"
 )

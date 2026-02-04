@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(go build:*)"
+      "Bash(go build:*)",
+      "Bash(dir /b \"D:\\\\1-code\\\\__trash__\\\\storebirth\\\\distributer\\\\scripts\")"
     ]
   }
 }

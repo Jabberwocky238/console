@@ -5,9 +5,9 @@ import (
 	"log"
 	"os"
 
-	"jabberwocky238/storebirth/dblayer"
-	"jabberwocky238/storebirth/handlers"
-	"jabberwocky238/storebirth/k8s"
+	"jabberwocky238/console/dblayer"
+	"jabberwocky238/console/handlers"
+	"jabberwocky238/console/k8s"
 
 	"github.com/gin-gonic/gin"
 )
@@ -25,6 +25,7 @@ func main() {
 		log.Fatal("DOMAIN environment variable is required")
 	}
 	log.Printf("Using domain: %s", domain)
+	k8s.Domain = domain
 
 	// Initialize database
 	if err := dblayer.InitDB(*dbDSN); err != nil {
@@ -48,8 +49,9 @@ func main() {
 	// Health check endpoint
 	r.GET("/health", handlers.Health)
 
-	// Serve index.html at root
+	// Serve static files
 	r.StaticFile("/", "./index.html")
+	r.StaticFile("/index.js", "./index.js")
 
 	// Public routes
 	r.POST("/auth/register", handlers.Register)
@@ -67,6 +69,12 @@ func main() {
 		api.POST("/kv", handlers.CreateKV)
 		api.GET("/kv", handlers.ListKVs)
 		api.DELETE("/kv/:id", handlers.DeleteKV)
+
+		// Worker routes
+		api.POST("/worker", handlers.RegisterWorker)
+		api.GET("/worker", handlers.ListWorkers)
+		api.GET("/worker/:id", handlers.GetWorker)
+		api.DELETE("/worker/:id", handlers.DeleteWorker)
 	}
 
 	// Start server

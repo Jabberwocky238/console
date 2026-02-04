@@ -49,6 +49,20 @@ CREATE TABLE IF NOT EXISTS verification_codes (
     used BOOLEAN DEFAULT false
 );
 
+-- Workers table
+CREATE TABLE IF NOT EXISTS workers (
+    id SERIAL PRIMARY KEY,
+    worker_id VARCHAR(64) NOT NULL,
+    owner_id VARCHAR(64) NOT NULL,
+    image TEXT NOT NULL,
+    port INTEGER NOT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'pending',
+    error_msg TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(worker_id, owner_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_user_rdbs_user_id ON user_rdbs(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_rdbs_status ON user_rdbs(status);

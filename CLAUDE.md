@@ -1,6 +1,6 @@
 项目结构
-                                                                                                              
-storebirth/                                                                                                                      
+
+console/
 ├── cmd/main.go              # 入口文件
 ├── dblayer/                  # 数据库层
 │   ├── db.go                 # 数据库连接初始化
@@ -9,10 +9,13 @@ storebirth/
 ├── handlers/                 # HTTP 处理器
 │   ├── auth.handler.go       # 认证和资源管理 API
 │   ├── auth.utils.go         # 工具函数 (JWT, 密码等)
+│   ├── common.handler.go     # RDB/KV 资源管理
+│   ├── worker.handler.go     # Worker 管理
 │   └── basic.handler.go      # 健康检查
 ├── k8s/                      # K8s 操作
-│   ├── k8s.go                # K8s 客户端和 Pod 管理
-│   └── worker.go             # 后台任务处理器
+│   ├── basic.go              # K8s 客户端初始化
+│   ├── combinator.go         # Combinator Pod 管理
+│   └── worker.go             # Worker Deployment 管理
 └── scripts/init.sql          # 数据库初始化脚本
 
 dblayer/actions.go 封装的函数

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>StoreBirth Terminal</title>
+    <title>Console Terminal</title>
     <style>
         * {
             margin: 0;
@@ -120,424 +120,100 @@
     <div id="terminal">
         <div id="output"></div>
         <div id="input-line">
-            <span id="prompt-symbol">guest@storebirth:~$</span>
+            <span id="prompt-symbol">guest@console:~$</span>
             <input type="text" id="input" autocomplete="off" autofocus>
         </div>
     </div>
 
+    <script src="index.js"></script>
     <script>
+        // Global state
+        window.currentUser = null;
+        window.token = null;
+
+        // DOM elements
         const output = document.getElementById('output');
         const input = document.getElementById('input');
         const promptSymbol = document.getElementById('prompt-symbol');
 
-        let currentUser = null;
-        let token = null;
+        // Terminal state
         let commandHistory = [];
         let historyIndex = -1;
         let awaitingInput = false;
         let inputCallback = null;
-        let passwordMode = false;
-
-        const API_BASE = window.location.origin;
 
         // ASCII Art
         const asciiArt = `
-   _____ _                 ____  _      _   _
-  / ____| |               |  _ \\(_)    | | | |
- | (___ | |_ ___  _ __ ___| |_) |_ _ __| |_| |__
-  \\___ \\| __/ _ \\| '__/ _ \\  _ <| | '__| __| '_ \\
-  ____) | || (_) | | |  __/ |_) | | |  | |_| | | |
- |_____/ \\__\\___/|_|  \\___|____/|_|_|   \\__|_| |_|
+    ____                      __
+   / ___|___  _ __  ___  ___ | | ___
+  | |   / _ \\| '_ \\/ __|/ _ \\| |/ _ \\
+  | |__| (_) | | | \\__ \\ (_) | |  __/
+   \\____\\___/|_| |_|___/\\___/|_|\\___|
 
         `;
 
-        function print(text, className = '') {
-            const line = document.createElement('div');
-            line.className = 'line ' + className;
-            line.textContent = text;
-            output.appendChild(line);
-            output.scrollTop = output.scrollHeight;
-        }
+        // Terminal object for commands
+        const terminal = {
+            print(text, className = '') {
+                const line = document.createElement('div');
+                line.className = 'line ' + className;
+                line.textContent = text;
+                output.appendChild(line);
+                output.scrollTop = output.scrollHeight;
+            },
 
-        function printHTML(html, className = '') {
-            const line = document.createElement('div');
-            line.className = 'line ' + className;
-            line.innerHTML = html;
-            output.appendChild(line);
-            output.scrollTop = output.scrollHeight;
-        }
+            printHTML(html, className = '') {
+                const line = document.createElement('div');
+                line.className = 'line ' + className;
+                line.innerHTML = html;
+                output.appendChild(line);
+                output.scrollTop = output.scrollHeight;
+            },
 
-        function clear() {
-            output.innerHTML = '';
-        }
+            clear() {
+                output.innerHTML = '';
+            },
 
-        function updatePrompt() {
-            if (currentUser) {
-                promptSymbol.textContent = `${currentUser}@storebirth:~$`;
-            } else {
-                promptSymbol.textContent = 'guest@storebirth:~$';
-            }
-        }
-
-        async function apiCall(endpoint, method = 'GET', data = null) {
-            const options = {
-                method,
-                headers: {
-                    'Content-Type': 'application/json',
+            updatePrompt() {
+                if (window.currentUser) {
+                    promptSymbol.textContent = `${window.currentUser}@console:~$`;
+                } else {
+                    promptSymbol.textContent = 'guest@console:~$';
                 }
-            };
+            },
 
-            if (token) {
-                options.headers['Authorization'] = `Bearer ${token}`;
+            waitForInput(prompt, isPassword = false) {
+                return new Promise((resolve) => {
+                    this.print(prompt, 'info');
+                    awaitingInput = true;
+                    inputCallback = resolve;
+                    if (isPassword) {
+                        input.type = 'password';
+                    }
+                });
             }
+        };
 
-            if (data) {
-                options.body = JSON.stringify(data);
-            }
-
-            try {
-                const response = await fetch(API_BASE + endpoint, options);
-                const result = await response.json();
-
-                if (!response.ok) {
-                    throw new Error(result.error || 'Request failed');
-                }
-
-                return result;
-            } catch (error) {
-                throw error;
-            }
-        }
-
-        function waitForInput(prompt, isPassword = false) {
-            return new Promise((resolve) => {
-                print(prompt, 'info');
-                awaitingInput = true;
-                passwordMode = isPassword;
-                inputCallback = resolve;
-                if (isPassword) {
-                    input.type = 'password';
-                }
-            });
-        }
-
+        // Command handler
         async function handleCommand(cmd) {
             const parts = cmd.trim().split(/\s+/);
             const command = parts[0].toLowerCase();
             const args = parts.slice(1);
 
-            print(`${promptSymbol.textContent} ${cmd}`);
+            terminal.print(`${promptSymbol.textContent} ${cmd}`);
 
-            switch (command) {
-                case 'help':
-                    showHelp();
-                    break;
-
-                case 'clear':
-                    clear();
-                    break;
-
-                case 'register':
-                    await registerUser();
-                    break;
-
-                case 'login':
-                    await loginUser();
-                    break;
-
-                case 'logout':
-                    logout();
-                    break;
-
-                case 'whoami':
-                    print(currentUser || 'guest', 'info');
-                    break;
-
-                case 'rdb':
-                    await handleRDB(args);
-                    break;
-
-                case 'kv':
-                    await handleKV(args);
-                    break;
-
-                case 'status':
-                    showStatus();
-                    break;
-
-                case '':
-                    break;
-
-                default:
-                    print(`Command not found: ${command}`, 'error');
-                    print('Type "help" for available commands', 'info');
-            }
-        }
-
-        function showHelp() {
-            print('');
-            print('Available Commands:', 'info');
-            print('');
-            print('  help                    - Show this help message');
-            print('  clear                   - Clear the terminal');
-            print('  register                - Register a new account');
-            print('  login                   - Login to your account');
-            print('  logout                  - Logout from your account');
-            print('  whoami                  - Show current user');
-            print('  status                  - Show current status');
-            print('');
-            print('  rdb list                - List all RDB resources');
-            print('  rdb add                 - Add a new RDB resource');
-            print('  rdb delete <id>         - Delete an RDB resource');
-            print('');
-            print('  kv list                 - List all KV resources');
-            print('  kv add                  - Add a new KV resource');
-            print('  kv delete <id>          - Delete a KV resource');
-            print('');
-        }
-
-        async function registerUser() {
-            try {
-                const email = await waitForInput('Enter email:');
-
-                print('Sending verification code...', 'info');
-                await apiCall('/auth/send-code', 'POST', { email });
-                print('Verification code sent to your email', 'success');
-
-                const code = await waitForInput('Enter verification code:');
-                const password = await waitForInput('Enter password:', true);
-
-                const result = await apiCall('/auth/register', 'POST', {
-                    email,
-                    code,
-                    password
-                });
-
-                currentUser = result.user_id;
-                token = result.token;
-                updatePrompt();
-
-                print('', 'success');
-                print('Registration successful!', 'success');
-                print(`User ID: ${result.user_id}`, 'info');
-                print(`Email: ${result.email}`, 'info');
-            } catch (error) {
-                print(`Registration failed: ${error.message}`, 'error');
-            }
-        }
-
-        async function loginUser() {
-            try {
-                const email = await waitForInput('Enter email:');
-                const password = await waitForInput('Enter password:', true);
-
-                const result = await apiCall('/auth/login', 'POST', {
-                    email,
-                    password
-                });
-
-                currentUser = result.user_id;
-                token = result.token;
-                updatePrompt();
-
-                print('', 'success');
-                print('Login successful!', 'success');
-                print(`User ID: ${result.user_id}`, 'info');
-            } catch (error) {
-                print(`Login failed: ${error.message}`, 'error');
-            }
-        }
-
-        function logout() {
-            currentUser = null;
-            token = null;
-            updatePrompt();
-            print('Logged out successfully', 'success');
-        }
-
-        function showStatus() {
-            print('');
-            print('=== System Status ===', 'info');
-            print(`User: ${currentUser || 'Not logged in'}`, currentUser ? 'success' : 'warning');
-            print(`Token: ${token ? 'Active' : 'None'}`, token ? 'success' : 'warning');
-            print('');
-        }
-
-        async function handleRDB(args) {
-            if (!token) {
-                print('Please login first', 'error');
+            if (command === 'clear') {
+                terminal.clear();
                 return;
             }
 
-            const subcommand = args[0];
+            if (command === '' ) return;
 
-            switch (subcommand) {
-                case 'list':
-                    await listRDBs();
-                    break;
-
-                case 'add':
-                    await addRDB();
-                    break;
-
-                case 'delete':
-                    if (!args[1]) {
-                        print('Usage: rdb delete <id>', 'error');
-                        return;
-                    }
-                    await deleteRDB(args[1]);
-                    break;
-
-                default:
-                    print('Usage: rdb [list|add|delete]', 'error');
-            }
-        }
-
-        async function listRDBs() {
-            try {
-                const result = await apiCall('/api/rdb', 'GET');
-                print('');
-                print('=== RDB Resources ===', 'info');
-                if (result.rdbs && result.rdbs.length > 0) {
-                    result.rdbs.forEach(rdb => {
-                        const statusClass = rdb.status === 'active' ? 'success' : (rdb.status === 'error' ? 'error' : 'warning');
-                        print(`ID: ${rdb.id}`, 'success');
-                        print(`  Name: ${rdb.name}`);
-                        print(`  Type: ${rdb.rdb_type}`);
-                        print(`  URL: ${rdb.url}`);
-                        print(`  Status: ${rdb.status}`, statusClass);
-                        if (rdb.error_msg) {
-                            print(`  Error: ${rdb.error_msg}`, 'error');
-                        }
-                        print('');
-                    });
-                } else {
-                    print('No RDB resources found', 'warning');
-                }
-            } catch (error) {
-                print(`Failed to list RDBs: ${error.message}`, 'error');
-            }
-        }
-
-        async function addRDB() {
-            try {
-                const name = await waitForInput('Enter RDB name:');
-                const type = await waitForInput('Enter RDB type (sqlite/postgres/mysql):');
-                const url = await waitForInput('Enter RDB URL:');
-
-                const result = await apiCall('/api/rdb', 'POST', {
-                    name,
-                    rdb_type: type,
-                    url
-                });
-
-                print('', 'success');
-                print(`ID: ${result.id}`, 'info');
-                if (result.error) {
-                    print(result.error, 'warning');
-                } else {
-                    print(result.message, 'success');
-                }
-            } catch (error) {
-                print(`Failed to create RDB: ${error.message}`, 'error');
-            }
-        }
-
-        async function deleteRDB(id) {
-            try {
-                await apiCall(`/api/rdb/${id}`, 'DELETE');
-                print('RDB deleted successfully', 'success');
-            } catch (error) {
-                print(`Failed to delete RDB: ${error.message}`, 'error');
-            }
-        }
-
-        async function handleKV(args) {
-            if (!token) {
-                print('Please login first', 'error');
-                return;
-            }
-
-            const subcommand = args[0];
-
-            switch (subcommand) {
-                case 'list':
-                    await listKVs();
-                    break;
-
-                case 'add':
-                    await addKV();
-                    break;
-
-                case 'delete':
-                    if (!args[1]) {
-                        print('Usage: kv delete <id>', 'error');
-                        return;
-                    }
-                    await deleteKV(args[1]);
-                    break;
-
-                default:
-                    print('Usage: kv [list|add|delete]', 'error');
-            }
-        }
-
-        async function listKVs() {
-            try {
-                const result = await apiCall('/api/kv', 'GET');
-                print('');
-                print('=== KV Resources ===', 'info');
-                if (result.kvs && result.kvs.length > 0) {
-                    result.kvs.forEach(kv => {
-                        const statusClass = kv.status === 'active' ? 'success' : (kv.status === 'error' ? 'error' : 'warning');
-                        print(`ID: ${kv.id}`, 'success');
-                        print(`  Name: ${kv.name}`);
-                        print(`  Type: ${kv.kv_type}`);
-                        print(`  URL: ${kv.url}`);
-                        print(`  Status: ${kv.status}`, statusClass);
-                        if (kv.error_msg) {
-                            print(`  Error: ${kv.error_msg}`, 'error');
-                        }
-                        print('');
-                    });
-                } else {
-                    print('No KV resources found', 'warning');
-                }
-            } catch (error) {
-                print(`Failed to list KVs: ${error.message}`, 'error');
-            }
-        }
-
-        async function addKV() {
-            try {
-                const name = await waitForInput('Enter KV name:');
-                const type = await waitForInput('Enter KV type (redis/memory):');
-                const url = await waitForInput('Enter KV URL:');
-
-                const result = await apiCall('/api/kv', 'POST', {
-                    name,
-                    kv_type: type,
-                    url
-                });
-
-                print('', 'success');
-                print(`ID: ${result.id}`, 'info');
-                if (result.error) {
-                    print(result.error, 'warning');
-                } else {
-                    print(result.message, 'success');
-                }
-            } catch (error) {
-                print(`Failed to create KV: ${error.message}`, 'error');
-            }
-        }
-
-        async function deleteKV(id) {
-            try {
-                await apiCall(`/api/kv/${id}`, 'DELETE');
-                print('KV deleted successfully', 'success');
-            } catch (error) {
-                print(`Failed to delete KV: ${error.message}`, 'error');
+            if (commands[command]) {
+                await commands[command](terminal, args);
+            } else {
+                terminal.print(`Command not found: ${command}`, 'error');
+                terminal.print('Type "help" for available commands', 'info');
             }
         }
 
@@ -550,7 +226,6 @@
                 if (awaitingInput) {
                     awaitingInput = false;
                     input.type = 'text';
-                    passwordMode = false;
                     if (inputCallback) {
                         inputCallback(value);
                         inputCallback = null;
@@ -579,16 +254,14 @@
         });
 
         // Keep input focused
-        document.addEventListener('click', () => {
-            input.focus();
-        });
+        document.addEventListener('click', () => input.focus());
 
         // Initialize
-        printHTML(asciiArt, 'ascii-art');
-        print('');
-        print('Welcome to StoreBirth Terminal v1.0', 'info');
-        print('Type "help" for available commands', 'info');
-        print('');
+        terminal.printHTML(asciiArt, 'ascii-art');
+        terminal.print('');
+        terminal.print('Welcome to Console Terminal v1.0', 'info');
+        terminal.print('Type "help" for available commands', 'info');
+        terminal.print('');
     </script>
 </body>
 </html>
