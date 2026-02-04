@@ -26,8 +26,9 @@ curl -O "https://raw.githubusercontent.com/jabberwocky238/console/main/scripts/c
 # Deploy in order
 envsubst < zerossl-issuer.yaml | kubectl apply -f -
 envsubst < ingress.yaml | kubectl apply -f -
+envsubst < ingress.yaml | kubectl delete -f -
 envsubst < control-plane-deployment.yaml | kubectl apply -f -
-
+envsubst < control-plane-deployment.yaml | kubectl delete -f -
 
 # Or delete by namespace
 kubectl delete namespace console
