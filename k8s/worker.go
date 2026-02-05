@@ -14,10 +14,10 @@ import (
 
 // Worker represents a worker deployment
 type Worker struct {
-	WorkerID string
-	OwnerID  string
-	Image    string
-	Port     int
+	WorkerID string `json:"worker_id"`
+	OwnerID  string `json:"owner_id"`
+	Image    string `json:"image"`
+	Port     int    `json:"port"`
 }
 
 // Name returns the worker's resource name

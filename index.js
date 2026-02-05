@@ -360,15 +360,9 @@ const rdbCommands = {
             terminal.print('=== RDB Resources ===', 'info');
             if (result.rdbs && result.rdbs.length > 0) {
                 result.rdbs.forEach(rdb => {
-                    const statusClass = rdb.status === 'active' ? 'success' : (rdb.status === 'error' ? 'error' : 'warning');
                     terminal.print(`ID: ${rdb.id}`, 'success');
-                    terminal.print(`  Name: ${rdb.name}`);
                     terminal.print(`  Type: ${rdb.rdb_type}`);
                     terminal.print(`  URL: ${rdb.url}`);
-                    terminal.print(`  Status: ${rdb.status}`, statusClass);
-                    if (rdb.error_msg) {
-                        terminal.print(`  Error: ${rdb.error_msg}`, 'error');
-                    }
                     terminal.print('');
                 });
             } else {
@@ -417,15 +411,9 @@ const kvCommands = {
             terminal.print('=== KV Resources ===', 'info');
             if (result.kvs && result.kvs.length > 0) {
                 result.kvs.forEach(kv => {
-                    const statusClass = kv.status === 'active' ? 'success' : (kv.status === 'error' ? 'error' : 'warning');
                     terminal.print(`ID: ${kv.id}`, 'success');
-                    terminal.print(`  Name: ${kv.name}`);
                     terminal.print(`  Type: ${kv.kv_type}`);
                     terminal.print(`  URL: ${kv.url}`);
-                    terminal.print(`  Status: ${kv.status}`, statusClass);
-                    if (kv.error_msg) {
-                        terminal.print(`  Error: ${kv.error_msg}`, 'error');
-                    }
                     terminal.print('');
                 });
             } else {
@@ -474,14 +462,9 @@ const workerCommands = {
             terminal.print('=== Workers ===', 'info');
             if (result && result.length > 0) {
                 result.forEach(w => {
-                    const statusClass = w.status === 'active' ? 'success' : (w.status === 'error' ? 'error' : 'warning');
                     terminal.print(`ID: ${w.worker_id}`, 'success');
                     terminal.print(`  Image: ${w.image}`);
                     terminal.print(`  Port: ${w.port}`);
-                    terminal.print(`  Status: ${w.status}`, statusClass);
-                    if (w.error_msg) {
-                        terminal.print(`  Error: ${w.error_msg}`, 'error');
-                    }
                     terminal.print('');
                 });
             } else {

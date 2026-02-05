@@ -36,6 +36,10 @@ envsubst < ingress.yaml | kubectl delete -f -
 envsubst < control-plane-deployment.yaml | kubectl apply -f -
 envsubst < control-plane-deployment.yaml | kubectl delete -f -
 
+kubectl rollout restart deployment/control-plane -n console
+
+kubectl delete pod -l app=<label> -n console
+
 # Or delete by namespace
 kubectl delete namespace console
 kubectl delete namespace ingress

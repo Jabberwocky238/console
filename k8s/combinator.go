@@ -19,13 +19,13 @@ import (
 type RDBItem struct {
 	ID   string `json:"id"`
 	URL  string `json:"url"`
-	Type string `json:"-"`
+	Type string `json:"rdb_type"`
 }
 
 type KVItem struct {
 	ID   string `json:"id"`
 	URL  string `json:"url"`
-	Type string `json:"-"`
+	Type string `json:"kv_type"`
 }
 
 type Combinator struct {
