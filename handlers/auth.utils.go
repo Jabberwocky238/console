@@ -1,13 +1,10 @@
 package handlers
 
 import (
-	"crypto"
+	"crypto/hmac"
 	"crypto/rand"
-	"crypto/rsa"
 	"crypto/sha256"
-	"crypto/x509"
 	"encoding/base64"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"time"
@@ -144,90 +141,25 @@ func GenerateCode() string {
 	return fmt.Sprintf("%06d", time.Now().UnixNano()%1000000)
 }
 
-// GenerateRSAKeyPair generates a new RSA key pair (2048 bits)
-// Returns: publicKeyPEM, privateKeyPEM, error
-func GenerateRSAKeyPair() (string, string, error) {
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		return "", "", err
-	}
-
-	// Encode private key to PEM
-	privateKeyBytes := x509.MarshalPKCS1PrivateKey(privateKey)
-	privateKeyPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: privateKeyBytes,
-	})
-
-	// Encode public key to PEM
-	publicKeyBytes, err := x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
-	if err != nil {
-		return "", "", err
-	}
-	publicKeyPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "PUBLIC KEY",
-		Bytes: publicKeyBytes,
-	})
-
-	return string(publicKeyPEM), string(privateKeyPEM), nil
+// GenerateSecretKey generates a 32-byte secret key for HMAC
+func GenerateSecretKey() string {
+	bytes := make([]byte, 24)
+	rand.Read(bytes)
+	return "sk_" + base64.RawURLEncoding.EncodeToString(bytes)
 }
 
-// GetPublicKeyFromPrivate extracts public key from private key PEM
-func GetPublicKeyFromPrivate(privateKeyPEM string) (*rsa.PublicKey, error) {
-	block, _ := pem.Decode([]byte(privateKeyPEM))
-	if block == nil {
-		return nil, errors.New("failed to decode private key PEM")
-	}
-
-	privateKey, err := x509.ParsePKCS1PrivateKey(block.Bytes)
-	if err != nil {
-		return nil, err
-	}
-
-	return &privateKey.PublicKey, nil
+// GenerateHMACSignature generates HMAC-SHA256 signature
+func GenerateHMACSignature(secretKey string, data []byte) string {
+	h := hmac.New(sha256.New, []byte(secretKey))
+	h.Write(data)
+	return base64.RawURLEncoding.EncodeToString(h.Sum(nil))
 }
 
-// VerifySignatureWithPrivateKey verifies RSA-SHA256 signature using stored private key
-func VerifySignatureWithPrivateKey(privateKeyPEM string, data []byte, signatureBase64 string) error {
-	// Get public key from private key
-	publicKey, err := GetPublicKeyFromPrivate(privateKeyPEM)
-	if err != nil {
-		return err
+// VerifyHMACSignature verifies HMAC-SHA256 signature
+func VerifyHMACSignature(secretKey string, data []byte, signature string) error {
+	expected := GenerateHMACSignature(secretKey, data)
+	if !hmac.Equal([]byte(expected), []byte(signature)) {
+		return errors.New("invalid signature")
 	}
-
-	// Decode signature
-	signature, err := base64.StdEncoding.DecodeString(signatureBase64)
-	if err != nil {
-		return err
-	}
-
-	// Hash data and verify
-	hash := sha256.Sum256(data)
-	return rsa.VerifyPKCS1v15(publicKey, crypto.SHA256, hash[:], signature)
-}
-
-// VerifySignature verifies RSA-SHA256 signature using public key PEM
-func VerifySignature(publicKeyPEM string, data []byte, signatureBase64 string) error {
-	block, _ := pem.Decode([]byte(publicKeyPEM))
-	if block == nil {
-		return errors.New("failed to decode public key PEM")
-	}
-
-	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
-	if err != nil {
-		return err
-	}
-
-	rsaPub, ok := pub.(*rsa.PublicKey)
-	if !ok {
-		return errors.New("not an RSA public key")
-	}
-
-	signature, err := base64.StdEncoding.DecodeString(signatureBase64)
-	if err != nil {
-		return err
-	}
-
-	hash := sha256.Sum256(data)
-	return rsa.VerifyPKCS1v15(rsaPub, crypto.SHA256, hash[:], signature)
+	return nil
 }

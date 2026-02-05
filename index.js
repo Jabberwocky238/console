@@ -1,24 +1,21 @@
 // API Client
 const API_BASE = window.location.origin;
 
-// RSA Signature helper
-async function signData(data, privateKeyPEM) {
-    const pemHeader = '-----BEGIN RSA PRIVATE KEY-----';
-    const pemFooter = '-----END RSA PRIVATE KEY-----';
-    const pemContents = privateKeyPEM.replace(pemHeader, '').replace(pemFooter, '').replace(/\s/g, '');
-    const binaryDer = Uint8Array.from(atob(pemContents), c => c.charCodeAt(0));
-
-    const privateKey = await crypto.subtle.importKey(
-        'pkcs8',
-        binaryDer,
-        { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+// HMAC-SHA256 Signature helper
+async function signData(data, secretKey) {
+    const encoder = new TextEncoder();
+    const keyData = encoder.encode(secretKey);
+    const key = await crypto.subtle.importKey(
+        'raw',
+        keyData,
+        { name: 'HMAC', hash: 'SHA-256' },
         false,
         ['sign']
     );
-
-    const encoder = new TextEncoder();
-    const signature = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', privateKey, encoder.encode(data));
-    return btoa(String.fromCharCode(...new Uint8Array(signature)));
+    const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(data));
+    // Base64 URL encoding (no padding)
+    return btoa(String.fromCharCode(...new Uint8Array(signature)))
+        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
 async function apiCall(endpoint, method = 'GET', data = null, requireSignature = false) {
@@ -38,10 +35,13 @@ async function apiCall(endpoint, method = 'GET', data = null, requireSignature =
         options.body = bodyStr;
     }
 
-    // Add signature for sensitive operations
-    if (requireSignature && window.privateKey) {
-        const signature = await signData(bodyStr, window.privateKey);
+    // Add HMAC signature for sensitive operations
+    if (requireSignature && window.secretKey && window.currentUser) {
+        const timestamp = Date.now().toString();
+        const signature = await signData(bodyStr + timestamp, window.secretKey);
         options.headers['X-Combinator-Signature'] = signature;
+        options.headers['X-Combinator-User-ID'] = window.currentUser;
+        options.headers['X-Combinator-Timestamp'] = timestamp;
     }
 
     const response = await fetch(API_BASE + endpoint, options);
@@ -120,12 +120,12 @@ const workerAPI = {
 
 // Credential Storage
 const credentialStore = {
-    save(userId, token, privateKey) {
-        const data = { userId, token, privateKey };
+    save(userId, token, secretKey) {
+        const data = { userId, token, secretKey };
         localStorage.setItem('console_credentials', JSON.stringify(data));
         window.currentUser = userId;
         window.token = token;
-        window.privateKey = privateKey;
+        window.secretKey = secretKey;
     },
 
     load() {
@@ -135,7 +135,7 @@ const credentialStore = {
                 const data = JSON.parse(stored);
                 window.currentUser = data.userId;
                 window.token = data.token;
-                window.privateKey = data.privateKey;
+                window.secretKey = data.secretKey;
                 return true;
             } catch (e) {
                 return false;
@@ -148,7 +148,7 @@ const credentialStore = {
         localStorage.removeItem('console_credentials');
         window.currentUser = null;
         window.token = null;
-        window.privateKey = null;
+        window.secretKey = null;
     }
 };
 
@@ -194,7 +194,7 @@ const commands = {
             const result = await authAPI.register(email, code, password);
 
             // Save credentials to localStorage
-            credentialStore.save(result.user_id, result.token, result.private_key);
+            credentialStore.save(result.user_id, result.token, result.secret_key);
             terminal.updatePrompt();
 
             terminal.print('', 'success');
@@ -202,12 +202,12 @@ const commands = {
             terminal.print(`User ID: ${result.user_id}`, 'info');
             terminal.print(`Email: ${result.email}`, 'info');
             terminal.print('');
-            terminal.print('Private key saved to localStorage', 'success');
+            terminal.print('Secret key saved to localStorage', 'success');
             terminal.print('');
-            terminal.print('=== IMPORTANT: Backup your private key ===', 'warning');
+            terminal.print('=== IMPORTANT: Backup your secret key ===', 'warning');
             terminal.print('If you clear browser data, you will need this key!', 'warning');
             terminal.print('');
-            terminal.print(result.private_key, 'info');
+            terminal.print(result.secret_key, 'info');
         } catch (error) {
             terminal.print(`Registration failed: ${error.message}`, 'error');
         }
@@ -220,27 +220,26 @@ const commands = {
 
             const result = await authAPI.login(email, password);
 
-            // Check if we have stored private key for this user
+            // Check if we have stored secret key for this user
             const stored = localStorage.getItem('console_credentials');
-            let privateKey = null;
+            let secretKey = null;
 
             if (stored) {
                 try {
                     const data = JSON.parse(stored);
-                    if (data.userId === result.user_id && data.privateKey) {
-                        privateKey = data.privateKey;
-                        terminal.print('Private key loaded from localStorage', 'info');
+                    if (data.userId === result.user_id && data.secretKey) {
+                        secretKey = data.secretKey;
+                        terminal.print('Secret key loaded from localStorage', 'info');
                     }
                 } catch (e) {}
             }
 
-            if (!privateKey) {
-                terminal.print('No stored private key found for this user', 'warning');
-                terminal.print('Enter your private key (paste full PEM, end with empty line):', 'info');
-                privateKey = await terminal.waitForMultilineInput();
+            if (!secretKey) {
+                terminal.print('No stored secret key found for this user', 'warning');
+                secretKey = await terminal.waitForInput('Enter your secret key (sk_...):');
             }
 
-            credentialStore.save(result.user_id, result.token, privateKey);
+            credentialStore.save(result.user_id, result.token, secretKey);
             terminal.updatePrompt();
 
             terminal.print('', 'success');

@@ -8,8 +8,7 @@ type User struct {
 	UID          string    `json:"id"`
 	Email        string    `json:"email"`
 	PasswordHash string    `json:"-"`
-	PublicKey    string    `json:"-"`
-	PrivateKey   string    `json:"-"`
+	SecretKey    string    `json:"-"`
 	CreatedAt    time.Time `json:"created_at"`
 }
 

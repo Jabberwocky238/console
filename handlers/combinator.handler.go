@@ -22,7 +22,7 @@ func CreateRDB(c *gin.Context) {
 
 	rdbUID, err := dblayer.CreateRDB(userUID, GenerateResourceUID(), req.Name, req.Type, req.URL)
 	if err != nil {
-		c.JSON(400, gin.H{"error": "failed to create RDB"})
+		c.JSON(400, gin.H{"error": "failed to create RDB: " + err.Error()})
 		return
 	}
 
@@ -62,7 +62,7 @@ func CreateKV(c *gin.Context) {
 
 	kvUID, err := dblayer.CreateKV(userUID, GenerateResourceUID(), req.Name, req.Type, req.URL)
 	if err != nil {
-		c.JSON(400, gin.H{"error": "failed to create KV"})
+		c.JSON(400, gin.H{"error": "failed to create KV: " + err.Error()})
 		return
 	}
 
@@ -94,7 +94,7 @@ func DeleteRDB(c *gin.Context) {
 
 	rows, err := dblayer.DeleteRDB(rdbUID, userUID)
 	if err != nil {
-		c.JSON(500, gin.H{"error": "failed to delete"})
+		c.JSON(500, gin.H{"error": "failed to delete: " + err.Error()})
 		return
 	}
 	if rows == 0 {
@@ -112,7 +112,7 @@ func DeleteKV(c *gin.Context) {
 
 	rows, err := dblayer.DeleteKV(kvUID, userUID)
 	if err != nil {
-		c.JSON(500, gin.H{"error": "failed to delete"})
+		c.JSON(500, gin.H{"error": "failed to delete: " + err.Error()})
 		return
 	}
 	if rows == 0 {

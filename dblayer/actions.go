@@ -22,11 +22,11 @@ func MarkCodeUsed(codeID int) error {
 }
 
 // CreateUser 创建用户
-func CreateUser(uid, email, passwordHash, publicKey, privateKey string) (string, error) {
+func CreateUser(uid, email, passwordHash, secretKey string) (string, error) {
 	var userUID string
 	err := DB.QueryRow(
-		"INSERT INTO users (uid, email, password_hash, public_key, private_key) VALUES ($1, $2, $3, $4, $5) RETURNING uid",
-		uid, email, passwordHash, publicKey, privateKey,
+		"INSERT INTO users (uid, email, password_hash, secret_key) VALUES ($1, $2, $3, $4) RETURNING uid",
+		uid, email, passwordHash, secretKey,
 	).Scan(&userUID)
 	return userUID, err
 }
@@ -35,9 +35,9 @@ func CreateUser(uid, email, passwordHash, publicKey, privateKey string) (string,
 func GetUserByEmail(email string) (*User, error) {
 	var user User
 	err := DB.QueryRow(
-		"SELECT uid, email, password_hash, public_key, private_key FROM users WHERE email = $1",
+		"SELECT uid, email, password_hash, secret_key FROM users WHERE email = $1",
 		email,
-	).Scan(&user.UID, &user.Email, &user.PasswordHash, &user.PublicKey, &user.PrivateKey)
+	).Scan(&user.UID, &user.Email, &user.PasswordHash, &user.SecretKey)
 	if err != nil {
 		return nil, err
 	}
@@ -62,24 +62,14 @@ func UpdateUserPassword(email, passwordHash string) error {
 	return err
 }
 
-// GetUserPrivateKey 通过 UID 获取用户私钥
-func GetUserPrivateKey(uid string) (string, error) {
-	var privateKey string
+// GetUserSecretKey 通过 UID 获取用户密钥
+func GetUserSecretKey(uid string) (string, error) {
+	var secretKey string
 	err := DB.QueryRow(
-		"SELECT private_key FROM users WHERE uid = $1",
+		"SELECT secret_key FROM users WHERE uid = $1",
 		uid,
-	).Scan(&privateKey)
-	return privateKey, err
-}
-
-// GetUserPublicKey 通过 UID 获取用户公钥
-func GetUserPublicKey(uid string) (string, error) {
-	var publicKey string
-	err := DB.QueryRow(
-		"SELECT public_key FROM users WHERE uid = $1",
-		uid,
-	).Scan(&publicKey)
-	return publicKey, err
+	).Scan(&secretKey)
+	return secretKey, err
 }
 
 // ========== RDB Actions ==========

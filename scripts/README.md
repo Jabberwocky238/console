@@ -23,8 +23,14 @@ curl -O "https://raw.githubusercontent.com/jabberwocky238/console/main/scripts/z
 curl -O "https://raw.githubusercontent.com/jabberwocky238/console/main/scripts/ingress.yaml"
 curl -O "https://raw.githubusercontent.com/jabberwocky238/console/main/scripts/control-plane-deployment.yaml"
 
+export ZEROSSL_EAB_KID=your_eab_kid
+export ZEROSSL_EAB_HMAC_KEY=your_eab_hmac_key
+export CLOUDFLARE_API_TOKEN=your_cloudflare_token
+export DOMAIN=example.com
+
 # Deploy in order
 envsubst < zerossl-issuer.yaml | kubectl apply -f -
+envsubst < zerossl-issuer.yaml | kubectl delete -f -
 envsubst < ingress.yaml | kubectl apply -f -
 envsubst < ingress.yaml | kubectl delete -f -
 envsubst < control-plane-deployment.yaml | kubectl apply -f -

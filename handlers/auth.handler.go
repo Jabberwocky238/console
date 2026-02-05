@@ -47,14 +47,10 @@ func Register(c *gin.Context) {
 		return
 	}
 
-	// Generate RSA key pair
-	publicKey, privateKey, err := GenerateRSAKeyPair()
-	if err != nil {
-		c.JSON(500, gin.H{"error": "failed to generate RSA key pair"})
-		return
-	}
+	// Generate secret key for HMAC
+	secretKey := GenerateSecretKey()
 
-	userUID, err := dblayer.CreateUser(GenerateUID(req.Email), req.Email, hash, publicKey, privateKey)
+	userUID, err := dblayer.CreateUser(GenerateUID(req.Email), req.Email, hash, secretKey)
 	if err != nil {
 		c.JSON(400, gin.H{"error": "email already exists"})
 		return
@@ -72,10 +68,10 @@ func Register(c *gin.Context) {
 
 	token, _ := GenerateToken(userUID, req.Email)
 	c.JSON(200, gin.H{
-		"user_id":     userUID,
-		"email":       req.Email,
-		"token":       token,
-		"private_key": privateKey,
+		"user_id":    userUID,
+		"email":      req.Email,
+		"token":      token,
+		"secret_key": secretKey,
 	})
 }
 
@@ -128,7 +124,7 @@ func AuthMiddleware() gin.HandlerFunc {
 	}
 }
 
-// SignatureMiddleware validates RSA signature for requests
+// SignatureMiddleware validates HMAC signature for requests
 func SignatureMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		signature := c.GetHeader("X-Combinator-Signature")
@@ -138,17 +134,24 @@ func SignatureMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		userID := c.GetHeader("X-Combinator-UserID")
+		userID := c.GetHeader("X-Combinator-User-ID")
 		if userID == "" {
 			c.JSON(401, gin.H{"error": "user_id required"})
 			c.Abort()
 			return
 		}
 
-		// Get user's public key
-		publicKey, err := dblayer.GetUserPublicKey(userID)
+		timestamp := c.GetHeader("X-Combinator-Timestamp")
+		if timestamp == "" {
+			c.JSON(401, gin.H{"error": "timestamp required"})
+			c.Abort()
+			return
+		}
+
+		// Get user's secret key
+		secretKey, err := dblayer.GetUserSecretKey(userID)
 		if err != nil {
-			c.JSON(401, gin.H{"error": "failed to get key"})
+			c.JSON(401, gin.H{"error": "invalid user"})
 			c.Abort()
 			return
 		}
@@ -161,13 +164,15 @@ func SignatureMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		// Verify signature
-		if err := VerifySignature(publicKey, body, signature); err != nil {
+		// Verify signature: HMAC(body + timestamp)
+		payload := append(body, []byte(timestamp)...)
+		if err := VerifyHMACSignature(secretKey, payload, signature); err != nil {
 			c.JSON(401, gin.H{"error": "invalid signature"})
 			c.Abort()
 			return
 		}
 
+		c.Set("user_id", userID)
 		c.Next()
 	}
 }
