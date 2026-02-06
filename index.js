@@ -75,8 +75,8 @@ const rdbAPI = {
         return apiCall('/api/rdb', 'GET');
     },
 
-    async create(rdb_type, url) {
-        return apiCall('/api/rdb', 'POST', { rdb_type, url }, true);
+    async create(name) {
+        return apiCall('/api/rdb', 'POST', { name }, true);
     },
 
     async delete(id) {
@@ -375,18 +375,13 @@ const rdbCommands = {
 
     async add(terminal) {
         try {
-            const type = await terminal.waitForInput('Enter RDB type (sqlite/postgres/mysql):');
-            const url = await terminal.waitForInput('Enter RDB URL:');
+            const name = await terminal.waitForInput('Enter RDB name:');
 
-            const result = await rdbAPI.create(type, url);
+            const result = await rdbAPI.create(name);
 
             terminal.print('', 'success');
             terminal.print(`ID: ${result.id}`, 'info');
-            if (result.error) {
-                terminal.print(result.error, 'warning');
-            } else {
-                terminal.print(result.message, 'success');
-            }
+            terminal.print(result.message, 'success');
         } catch (error) {
             terminal.print(`Failed to create RDB: ${error.message}`, 'error');
         }

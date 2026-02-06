@@ -10,19 +10,12 @@ import (
 func CreateRDB(c *gin.Context) {
 	userUID := c.GetString("user_id")
 	var req struct {
-		Type string `json:"rdb_type" binding:"required"`
-		URL  string `json:"url" binding:"required"`
+		Name string `json:"name" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
-
-	// rdbUID, err := dblayer.CreateRDB(userUID, GenerateResourceUID(), req.Name, req.Type, req.URL)
-	// if err != nil {
-	// 	c.JSON(400, gin.H{"error": "failed to create RDB: " + err.Error()})
-	// 	return
-	// }
 
 	combinator, err := k8s.GetCombinatorConfig(userUID)
 	if err != nil {
@@ -30,21 +23,13 @@ func CreateRDB(c *gin.Context) {
 		return
 	}
 
-	newRDB := k8s.RDBItem{
-		ID:   GenerateResourceUID(),
-		Type: req.Type,
-		URL:  req.URL,
+	id, err := combinator.AddRDB(req.Name)
+	if err != nil {
+		c.JSON(500, gin.H{"error": "failed to create RDB: " + err.Error()})
+		return
 	}
-	combinator.RDBs = append(combinator.RDBs, newRDB)
 
-	// Reload combinator config
-	if err := combinator.UpdateConfig(); err != nil {
-		// dblayer.SetRDBStatus(rdbUID, "error", err.Error())
-		c.JSON(200, gin.H{"id": newRDB.ID, "error": "RDB created but failed to update config, err: " + err.Error()})
-	} else {
-		// dblayer.SetRDBStatus(rdbUID, "active", "")
-		c.JSON(200, gin.H{"id": newRDB.ID, "message": "RDB created successfully"})
-	}
+	c.JSON(200, gin.H{"id": id, "message": "RDB created successfully"})
 }
 
 // ListRDBs lists all RDB resources for user
@@ -58,11 +43,6 @@ func ListRDBs(c *gin.Context) {
 	}
 
 	rdbs := combinator.RDBs
-	// rdbs, err := dblayer.ListRDBsByUser(userUID)
-	// if err != nil {
-	// 	c.JSON(500, gin.H{"error": "failed to query"})
-	// 	return
-	// }
 	c.JSON(200, gin.H{"rdbs": rdbs})
 }
 
@@ -77,12 +57,6 @@ func CreateKV(c *gin.Context) {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
-
-	// kvUID, err := dblayer.CreateKV(userUID, GenerateResourceUID(), req.Name, req.Type, req.URL)
-	// if err != nil {
-	// 	c.JSON(400, gin.H{"error": "failed to create KV: " + err.Error()})
-	// 	return
-	// }
 
 	combinator, err := k8s.GetCombinatorConfig(userUID)
 	if err != nil {
@@ -117,18 +91,13 @@ func ListKVs(c *gin.Context) {
 		return
 	}
 
-	// kvs, err := dblayer.ListKVsByUser(userUID)
-	// if err != nil {
-	// 	c.JSON(500, gin.H{"error": "failed to query"})
-	// 	return
-	// }
 	c.JSON(200, gin.H{"kvs": combinator.KVs})
 }
 
 // DeleteRDB deletes an RDB resource
 func DeleteRDB(c *gin.Context) {
 	userUID := c.GetString("user_id")
-	rdbUID := c.Param("id")
+	rdbID := c.Param("id")
 
 	combinator, err := k8s.GetCombinatorConfig(userUID)
 	if err != nil {
@@ -136,36 +105,10 @@ func DeleteRDB(c *gin.Context) {
 		return
 	}
 
-	// 先查找有没有
-	newRDBs := []k8s.RDBItem{}
-	isExist := false
-	for _, rdb := range combinator.RDBs {
-		if rdb.ID == rdbUID {
-			isExist = true
-			continue
-		}
-		newRDBs = append(newRDBs, rdb)
-	}
-	if !isExist {
-		c.JSON(404, gin.H{"error": "not found this RDB: " + rdbUID})
+	if err := combinator.DeleteRDB(rdbID); err != nil {
+		c.JSON(500, gin.H{"error": "failed to delete RDB: " + err.Error()})
 		return
 	}
-	combinator.RDBs = newRDBs
-
-	// Reload combinator config
-	if err := combinator.UpdateConfig(); err != nil {
-		c.JSON(500, gin.H{"error": "failed to update combinator config: " + err.Error()})
-		return
-	}
-	// rows, err := dblayer.DeleteRDB(rdbUID, userUID)
-	// if err != nil {
-	// 	c.JSON(500, gin.H{"error": "failed to delete: " + err.Error()})
-	// 	return
-	// }
-	// if rows == 0 {
-	// 	c.JSON(404, gin.H{"error": "not found"})
-	// 	return
-	// }
 
 	c.JSON(200, gin.H{"message": "deleted"})
 }

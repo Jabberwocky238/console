@@ -126,7 +126,7 @@ spec:
           --logtostderr
           --advertise-host=$(hostname -f)
           --http-addr=0.0.0.0
-          --join=cockroachdb-0.cockroachdb-headless,cockroachdb-1.cockroachdb-headless,cockroachdb-2.cockroachdb-headless
+          --join=cockroachdb-0.cockroachdb-headless
           --cache=.25
           --max-sql-memory=.25
         volumeMounts:
@@ -205,6 +205,19 @@ spec:
   template:
     spec:
       restartPolicy: OnFailure
+      initContainers:
+      - name: wait-for-dns
+        image: busybox:1.36
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "Waiting for cockroachdb-0 DNS..."
+          until nslookup cockroachdb-0.cockroachdb-headless.cockroachdb.svc.cluster.local; do
+            echo "DNS not ready, waiting..."
+            sleep 5
+          done
+          echo "DNS ready!"
       containers:
       - name: init
         image: cockroachdb/cockroach:v23.2.0
@@ -214,7 +227,7 @@ spec:
         - |
           /cockroach/cockroach init \
             --insecure \
-            --host=cockroachdb-0.cockroachdb-headless
+            --host=cockroachdb-0.cockroachdb-headless.cockroachdb.svc.cluster.local
 ---
 # Job for user initialization (run after cluster init)
 apiVersion: batch/v1

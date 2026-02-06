@@ -70,6 +70,13 @@ func (r *UserRDB) DSN() string {
 		r.Username(), r.Password, CockroachDBHost, CockroachDBPort, r.Database())
 }
 
+// DSNWithSchema returns connection string with specific schema
+func (r *UserRDB) DSNWithSchema(schemaID string) string {
+	schName := fmt.Sprintf("schema_%s", sanitize(schemaID))
+	return fmt.Sprintf("postgresql://%s:%s@%s:%s/%s?sslmode=disable&search_path=%s",
+		r.Username(), r.Password, CockroachDBHost, CockroachDBPort, r.Database(), schName)
+}
+
 // secretName returns rdb-secret-<uid>
 func (r *UserRDB) secretName() string {
 	return fmt.Sprintf("rdb-secret-%s", r.UserUID)

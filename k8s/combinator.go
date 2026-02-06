@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -18,8 +18,8 @@ import (
 
 type RDBItem struct {
 	ID   string `json:"id"`
+	Name string `json:"name"`
 	URL  string `json:"url"`
-	Type string `json:"rdb_type"`
 }
 
 type KVItem struct {
@@ -54,43 +54,7 @@ func GetCombinatorConfig(userUID string) (*Combinator, error) {
 		return nil, err
 	}
 
-	// Auto-detect types from URL
-	for i := range c.RDBs {
-		c.RDBs[i].Type = detectRDBType(c.RDBs[i].URL)
-	}
-	for i := range c.KVs {
-		c.KVs[i].Type = detectKVType(c.KVs[i].URL)
-	}
-
 	return c, nil
-}
-
-// detectRDBType detects RDB type from URL prefix
-func detectRDBType(url string) string {
-	lower := strings.ToLower(url)
-	switch {
-	case strings.HasPrefix(lower, "postgres://"), strings.HasPrefix(lower, "postgresql://"):
-		return "postgres"
-	case strings.HasPrefix(lower, "mysql://"):
-		return "mysql"
-	case strings.HasPrefix(lower, "sqlite://"), strings.HasPrefix(lower, "file:"):
-		return "sqlite"
-	default:
-		return "unknown"
-	}
-}
-
-// detectKVType detects KV type from URL prefix
-func detectKVType(url string) string {
-	lower := strings.ToLower(url)
-	switch {
-	case strings.HasPrefix(lower, "redis://"), strings.HasPrefix(lower, "rediss://"):
-		return "redis"
-	case strings.HasPrefix(lower, "memory://"):
-		return "memory"
-	default:
-		return "unknown"
-	}
 }
 
 func (c *Combinator) ToJSON() ([]byte, error) {
@@ -107,6 +71,61 @@ func (c *Combinator) Name() string {
 
 func (c *Combinator) ConfigMapName() string {
 	return fmt.Sprintf("combinator-config-%s", c.UserUID)
+}
+
+// AddRDB creates a new schema and adds RDB config
+func (c *Combinator) AddRDB(name string) (string, error) {
+	// Generate ID
+	id := uuid.New().String()[:8]
+
+	// Get user's RDB credentials
+	userRDB, err := GetUserRDB(c.UserUID)
+	if err != nil {
+		return "", fmt.Errorf("get user rdb failed: %w", err)
+	}
+
+	// Create schema in CockroachDB
+	if err := userRDB.CreateSchema(id); err != nil {
+		return "", fmt.Errorf("create schema failed: %w", err)
+	}
+
+	// Add to config
+	c.RDBs = append(c.RDBs, RDBItem{
+		ID:   id,
+		Name: name,
+		URL:  userRDB.DSNWithSchema(id),
+	})
+
+	// Update ConfigMap and reload
+	if err := c.UpdateConfig(); err != nil {
+		return "", err
+	}
+
+	return id, nil
+}
+
+// DeleteRDB deletes schema and removes RDB config
+func (c *Combinator) DeleteRDB(id string) error {
+	// Get user's RDB credentials
+	userRDB, err := GetUserRDB(c.UserUID)
+	if err != nil {
+		return fmt.Errorf("get user rdb failed: %w", err)
+	}
+
+	// Delete schema
+	if err := userRDB.DeleteSchema(id); err != nil {
+		return fmt.Errorf("delete schema failed: %w", err)
+	}
+
+	// Remove from config
+	for i, rdb := range c.RDBs {
+		if rdb.ID == id {
+			c.RDBs = append(c.RDBs[:i], c.RDBs[i+1:]...)
+			break
+		}
+	}
+
+	return c.UpdateConfig()
 }
 
 // UpdateConfig updates ConfigMap for Combinator pod
