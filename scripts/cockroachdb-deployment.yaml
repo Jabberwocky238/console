@@ -1,4 +1,4 @@
-# version: 1024
+# version: 1124
 # CockroachDB StatefulSet Deployment for K8s
 # 支持动态扩缩容和用户管理
 ---
@@ -17,6 +17,7 @@ metadata:
     app: cockroachdb
 spec:
   clusterIP: None
+  publishNotReadyAddresses: true
   selector:
     app: cockroachdb
   ports:
