@@ -22,6 +22,7 @@ kubectl wait --for=condition=ready pod -l app.kubernetes.io/instance=cert-manage
 curl -O "https://raw.githubusercontent.com/jabberwocky238/console/main/scripts/zerossl-issuer.yaml"
 curl -O "https://raw.githubusercontent.com/jabberwocky238/console/main/scripts/ingress.yaml"
 curl -O "https://raw.githubusercontent.com/jabberwocky238/console/main/scripts/control-plane-deployment.yaml"
+curl -O "https://raw.githubusercontent.com/jabberwocky238/console/main/scripts/cockroachdb-deployment.yaml"
 
 export ZEROSSL_EAB_KID=your_eab_kid
 export ZEROSSL_EAB_HMAC_KEY=your_eab_hmac_key
@@ -29,6 +30,8 @@ export CLOUDFLARE_API_TOKEN=your_cloudflare_token
 export DOMAIN=example.com
 
 # Deploy in order
+envsubst < cockroachdb-deployment.yaml | kubectl apply -f -
+envsubst < cockroachdb-deployment.yaml | kubectl delete -f -
 envsubst < zerossl-issuer.yaml | kubectl apply -f -
 envsubst < zerossl-issuer.yaml | kubectl delete -f -
 envsubst < ingress.yaml | kubectl apply -f -

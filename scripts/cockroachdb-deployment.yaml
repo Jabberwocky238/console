@@ -74,7 +74,7 @@ metadata:
   name: cockroachdb-pdb
   namespace: cockroachdb
 spec:
-  minAvailable: 2
+  minAvailable: 1
   selector:
     matchLabels:
       app: cockroachdb
@@ -87,7 +87,7 @@ metadata:
   namespace: cockroachdb
 spec:
   serviceName: cockroachdb-headless
-  replicas: 3  # 初始3节点，可通过 kubectl scale 调整
+  replicas: 1  # 单节点模式
   podManagementPolicy: Parallel
   selector:
     matchLabels:
@@ -109,11 +109,11 @@ spec:
           name: http
         resources:
           requests:
-            cpu: "500m"
-            memory: "2Gi"
+            cpu: "100m"
+            memory: "256Mi"
           limits:
-            cpu: "2"
-            memory: "4Gi"
+            cpu: "1"
+            memory: "512Mi"
         env:
         - name: COCKROACH_CHANNEL
           value: kubernetes-multiregion
@@ -166,8 +166,8 @@ spec:
     apiVersion: apps/v1
     kind: StatefulSet
     name: cockroachdb
-  minReplicas: 3
-  maxReplicas: 9
+  minReplicas: 1
+  maxReplicas: 3
   metrics:
   - type: Resource
     resource:
