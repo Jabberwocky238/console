@@ -65,7 +65,7 @@ func (r *UserRDB) DSNWithSchema(schemaID string) string {
 
 // getDB returns connection to user's database
 func (r *UserRDB) getDB() (*sql.DB, error) {
-	dsn := CockroachDBAdminDSN + "/" + r.Database()
+	dsn := fmt.Sprintf("postgresql://root@%s:%s/%s?sslmode=disable", CockroachDBHost, CockroachDBPort, r.Database())
 	return sql.Open("postgres", dsn)
 }
 
