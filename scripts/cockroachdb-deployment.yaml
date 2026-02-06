@@ -1,0 +1,246 @@
+# CockroachDB StatefulSet Deployment for K8s
+# 支持动态扩缩容和用户管理
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cockroachdb
+---
+# Headless Service for StatefulSet DNS
+apiVersion: v1
+kind: Service
+metadata:
+  name: cockroachdb-headless
+  namespace: cockroachdb
+  labels:
+    app: cockroachdb
+spec:
+  clusterIP: None
+  selector:
+    app: cockroachdb
+  ports:
+  - name: grpc
+    port: 26257
+    targetPort: 26257
+  - name: http
+    port: 8080
+    targetPort: 8080
+---
+# Public Service for client connections
+apiVersion: v1
+kind: Service
+metadata:
+  name: cockroachdb-public
+  namespace: cockroachdb
+  labels:
+    app: cockroachdb
+spec:
+  type: ClusterIP
+  selector:
+    app: cockroachdb
+  ports:
+  - name: grpc
+    port: 26257
+    targetPort: 26257
+  - name: http
+    port: 8080
+    targetPort: 8080
+---
+# Secret for root user credentials
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cockroachdb-secret
+  namespace: cockroachdb
+type: Opaque
+stringData:
+  root-password: "change-me-in-production-iamthedestiny"
+---
+# ConfigMap for init scripts (user management)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cockroachdb-init
+  namespace: cockroachdb
+data:
+  init.sql: |
+    -- 控制平面通过 root 用户动态管理
+    SELECT 1;
+---
+# PodDisruptionBudget for high availability
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: cockroachdb-pdb
+  namespace: cockroachdb
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: cockroachdb
+---
+# StatefulSet for CockroachDB cluster
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: cockroachdb
+  namespace: cockroachdb
+spec:
+  serviceName: cockroachdb-headless
+  replicas: 3  # 初始3节点，可通过 kubectl scale 调整
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app: cockroachdb
+  template:
+    metadata:
+      labels:
+        app: cockroachdb
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+      - name: cockroachdb
+        image: cockroachdb/cockroach:v23.2.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 26257
+          name: grpc
+        - containerPort: 8080
+          name: http
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "2Gi"
+          limits:
+            cpu: "2"
+            memory: "4Gi"
+        env:
+        - name: COCKROACH_CHANNEL
+          value: kubernetes-multiregion
+        command:
+        - /bin/bash
+        - -ecx
+        - >
+          exec /cockroach/cockroach start
+          --insecure
+          --logtostderr
+          --advertise-host=$(hostname -f)
+          --http-addr=0.0.0.0
+          --join=cockroachdb-0.cockroachdb-headless,cockroachdb-1.cockroachdb-headless,cockroachdb-2.cockroachdb-headless
+          --cache=.25
+          --max-sql-memory=.25
+        volumeMounts:
+        - name: datadir
+          mountPath: /cockroach/cockroach-data
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /health?ready=1
+            port: http
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 5
+  volumeClaimTemplates:
+  - metadata:
+      name: datadir
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 10Gi
+---
+# HorizontalPodAutoscaler for dynamic scaling
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: cockroachdb-hpa
+  namespace: cockroachdb
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: cockroachdb
+  minReplicas: 3
+  maxReplicas: 9
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Pods
+        value: 1
+        periodSeconds: 300
+    scaleDown:
+      stabilizationWindowSeconds: 600
+      policies:
+      - type: Pods
+        value: 1
+        periodSeconds: 600
+---
+# Job for cluster initialization
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cockroachdb-init
+  namespace: cockroachdb
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: init
+        image: cockroachdb/cockroach:v23.2.0
+        command:
+        - /bin/bash
+        - -c
+        - |
+          /cockroach/cockroach init \
+            --insecure \
+            --host=cockroachdb-0.cockroachdb-headless
+---
+# Job for user initialization (run after cluster init)
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cockroachdb-user-init
+  namespace: cockroachdb
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: user-init
+        image: cockroachdb/cockroach:v23.2.0
+        command:
+        - /bin/bash
+        - -c
+        - |
+          /cockroach/cockroach sql \
+            --insecure \
+            --host=cockroachdb-public \
+            --file=/init/init.sql
+        volumeMounts:
+        - name: init-scripts
+          mountPath: /init
+      volumes:
+      - name: init-scripts
+        configMap:
+          name: cockroachdb-init
