@@ -63,6 +63,11 @@ func Register(c *gin.Context) {
 		dblayer.MarkCodeUsed(codeID)
 	}
 
+	// Initialize user's RDB (CockroachDB database and user)
+	if _, err := k8s.InitUserRDB(userUID); err != nil {
+		log.Printf("Warning: Failed to init RDB for user %s: %v", userUID, err)
+	}
+
 	combinator := k8s.Combinator{
 		UserUID: userUID,
 		RDBs:    []k8s.RDBItem{},

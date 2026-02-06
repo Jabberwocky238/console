@@ -40,6 +40,8 @@ envsubst < control-plane-deployment.yaml | kubectl apply -f -
 envsubst < control-plane-deployment.yaml | kubectl delete -f -
 
 kubectl rollout restart deployment/control-plane -n console
+# 连接方式：
+kubectl exec -it cockroachdb-0 -n cockroachdb -- /cockroach/cockroach sql --insecure
 
 kubectl delete pod -l app=<label> -n console
 
