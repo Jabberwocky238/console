@@ -1,15 +1,12 @@
 package k8s
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 	"os"
 	"strings"
 
 	_ "github.com/lib/pq"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 var (
@@ -33,8 +30,7 @@ func init() {
 
 // UserRDB represents user's database info
 type UserRDB struct {
-	UserUID  string
-	Password string
+	UserUID string
 }
 
 // sanitize replaces invalid characters for SQL identifiers
@@ -42,16 +38,6 @@ func sanitize(s string) string {
 	s = strings.ReplaceAll(s, "-", "_")
 	s = strings.ReplaceAll(s, ".", "_")
 	return strings.ToLower(s)
-}
-
-// generatePassword generates a random password
-func generatePassword() string {
-	const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	b := make([]byte, 24)
-	for i := range b {
-		b[i] = chars[i%len(chars)]
-	}
-	return string(b)
 }
 
 // Username returns user_<uid>
@@ -64,22 +50,17 @@ func (r *UserRDB) Database() string {
 	return fmt.Sprintf("db_%s", sanitize(r.UserUID))
 }
 
-// DSN returns full connection string
+// DSN returns full connection string (no password in insecure mode)
 func (r *UserRDB) DSN() string {
-	return fmt.Sprintf("postgresql://%s:%s@%s:%s/%s?sslmode=disable",
-		r.Username(), r.Password, CockroachDBHost, CockroachDBPort, r.Database())
+	return fmt.Sprintf("postgresql://%s@%s:%s/%s?sslmode=disable",
+		r.Username(), CockroachDBHost, CockroachDBPort, r.Database())
 }
 
 // DSNWithSchema returns connection string with specific schema
 func (r *UserRDB) DSNWithSchema(schemaID string) string {
 	schName := fmt.Sprintf("schema_%s", sanitize(schemaID))
-	return fmt.Sprintf("postgresql://%s:%s@%s:%s/%s?sslmode=disable&search_path=%s",
-		r.Username(), r.Password, CockroachDBHost, CockroachDBPort, r.Database(), schName)
-}
-
-// secretName returns rdb-secret-<uid>
-func (r *UserRDB) secretName() string {
-	return fmt.Sprintf("rdb-secret-%s", r.UserUID)
+	return fmt.Sprintf("postgresql://%s@%s:%s/%s?sslmode=disable&search_path=%s",
+		r.Username(), CockroachDBHost, CockroachDBPort, r.Database(), schName)
 }
 
 // getDB returns connection to user's database
@@ -163,15 +144,15 @@ func InitUserRDB(userUID string) (*UserRDB, error) {
 	}
 	defer db.Close()
 
-	r := &UserRDB{UserUID: userUID, Password: generatePassword()}
+	r := &UserRDB{UserUID: userUID}
 
 	// Create database
 	if _, err := db.Exec(fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s", r.Database())); err != nil {
 		return nil, err
 	}
 
-	// Create user
-	if _, err := db.Exec(fmt.Sprintf("CREATE USER IF NOT EXISTS %s WITH PASSWORD '%s'", r.Username(), r.Password)); err != nil {
+	// Create user (no password in insecure mode)
+	if _, err := db.Exec(fmt.Sprintf("CREATE USER IF NOT EXISTS %s", r.Username())); err != nil {
 		return nil, err
 	}
 
@@ -180,49 +161,10 @@ func InitUserRDB(userUID string) (*UserRDB, error) {
 		return nil, err
 	}
 
-	// Store secret
-	if err := r.saveSecret(); err != nil {
-		return nil, err
-	}
-
 	return r, nil
 }
 
-// saveSecret stores password in K8s Secret
-func (r *UserRDB) saveSecret() error {
-	if K8sClient == nil {
-		return fmt.Errorf("k8s client not initialized")
-	}
-	ctx := context.Background()
-	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      r.secretName(),
-			Namespace: RDBNamespace,
-			Labels:    map[string]string{"app": "user-rdb", "user-uid": r.UserUID},
-		},
-		Type:       corev1.SecretTypeOpaque,
-		StringData: map[string]string{"password": r.Password},
-	}
-	_, err := K8sClient.CoreV1().Secrets(RDBNamespace).Create(ctx, secret, metav1.CreateOptions{})
-	return err
-}
-
-// GetUserRDB retrieves user's RDB from K8s Secret
-func GetUserRDB(userUID string) (*UserRDB, error) {
-	if K8sClient == nil {
-		return nil, fmt.Errorf("k8s client not initialized")
-	}
-	ctx := context.Background()
-	r := &UserRDB{UserUID: userUID}
-	secret, err := K8sClient.CoreV1().Secrets(RDBNamespace).Get(ctx, r.secretName(), metav1.GetOptions{})
-	if err != nil {
-		return nil, err
-	}
-	r.Password = string(secret.Data["password"])
-	return r, nil
-}
-
-// DeleteUserRDB deletes user's database, user and secret
+// DeleteUserRDB deletes user's database and user
 func DeleteUserRDB(userUID string) error {
 	db, err := sql.Open("postgres", CockroachDBAdminDSN)
 	if err != nil {
@@ -233,10 +175,5 @@ func DeleteUserRDB(userUID string) error {
 	r := &UserRDB{UserUID: userUID}
 	db.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s CASCADE", r.Database()))
 	db.Exec(fmt.Sprintf("DROP USER IF EXISTS %s", r.Username()))
-
-	if K8sClient != nil {
-		ctx := context.Background()
-		K8sClient.CoreV1().Secrets(RDBNamespace).Delete(ctx, r.secretName(), metav1.DeleteOptions{})
-	}
 	return nil
 }

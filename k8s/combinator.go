@@ -78,11 +78,8 @@ func (c *Combinator) AddRDB(name string) (string, error) {
 	// Generate ID
 	id := uuid.New().String()[:8]
 
-	// Get user's RDB credentials
-	userRDB, err := GetUserRDB(c.UserUID)
-	if err != nil {
-		return "", fmt.Errorf("get user rdb failed: %w", err)
-	}
+	// Get user's RDB
+	userRDB := UserRDB{UserUID: c.UserUID}
 
 	// Create schema in CockroachDB
 	if err := userRDB.CreateSchema(id); err != nil {
@@ -107,10 +104,7 @@ func (c *Combinator) AddRDB(name string) (string, error) {
 // DeleteRDB deletes schema and removes RDB config
 func (c *Combinator) DeleteRDB(id string) error {
 	// Get user's RDB credentials
-	userRDB, err := GetUserRDB(c.UserUID)
-	if err != nil {
-		return fmt.Errorf("get user rdb failed: %w", err)
-	}
+	userRDB := UserRDB{UserUID: c.UserUID}
 
 	// Delete schema
 	if err := userRDB.DeleteSchema(id); err != nil {
