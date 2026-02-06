@@ -126,7 +126,7 @@ spec:
           --logtostderr
           --advertise-host=$(hostname -f)
           --http-addr=0.0.0.0
-          --join=cockroachdb-0.cockroachdb-headless
+          --join=cockroachdb-0.cockroachdb-headless.cockroachdb.svc.cluster.local
           --cache=.25
           --max-sql-memory=.25
         volumeMounts:
@@ -228,32 +228,3 @@ spec:
           /cockroach/cockroach init \
             --insecure \
             --host=cockroachdb-0.cockroachdb-headless.cockroachdb.svc.cluster.local
----
-# Job for user initialization (run after cluster init)
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: cockroachdb-user-init
-  namespace: cockroachdb
-spec:
-  template:
-    spec:
-      restartPolicy: OnFailure
-      containers:
-      - name: user-init
-        image: cockroachdb/cockroach:v23.2.0
-        command:
-        - /bin/bash
-        - -c
-        - |
-          /cockroach/cockroach sql \
-            --insecure \
-            --host=cockroachdb-public \
-            --file=/init/init.sql
-        volumeMounts:
-        - name: init-scripts
-          mountPath: /init
-      volumes:
-      - name: init-scripts
-        configMap:
-          name: cockroachdb-init
