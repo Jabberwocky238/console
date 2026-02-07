@@ -55,6 +55,8 @@ func main() {
 	// Start worker handler (deploy queue + periodic reconcile)
 	wh := handlers.NewWorkerHandler()
 	wh.Start()
+	ah := handlers.NewAuthHandler()
+	ah.Start()
 
 	// Start periodic domain check
 	k8s.StartPeriodicCheck()
@@ -77,7 +79,7 @@ func main() {
 
 	api := r.Group("/api")
 	// Public routes
-	api.POST("/auth/register", handlers.Register)
+	api.POST("/auth/register", ah.Register)
 	api.POST("/auth/login", handlers.Login)
 	api.POST("/auth/send-code", handlers.SendCode)
 	api.POST("/auth/reset-password", handlers.ResetPassword)

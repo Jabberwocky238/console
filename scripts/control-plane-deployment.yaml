@@ -177,17 +177,20 @@ metadata:
   name: control-plane-role
 rules:
 - apiGroups: [""]
-  resources: ["pods", "configmaps", "services"]
-  verbs: ["get", "list", "create", "update", "delete"]
-- apiGroups: [""]
-  resources: ["secrets"]
-  verbs: ["get", "list", "create", "update", "delete"]
+  resources: ["pods", "configmaps", "services", "secrets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 - apiGroups: ["apps"]
   resources: ["deployments"]
-  verbs: ["get", "list", "create", "update", "delete"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 - apiGroups: ["traefik.io"]
   resources: ["ingressroutes"]
-  verbs: ["get", "list", "create", "update", "delete"]
+  verbs: ["get", "list", "watch", "create", "update", "delete"]
+- apiGroups: ["console.app238.com"]
+  resources: ["workerapps", "workerapps/status"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["apiextensions.k8s.io"]
+  resources: ["customresourcedefinitions"]
+  verbs: ["get", "list", "create", "update"]
 
 ---
 # ClusterRoleBinding

@@ -28,6 +28,7 @@ export ZEROSSL_EAB_KID=your_eab_kid
 export ZEROSSL_EAB_HMAC_KEY=your_eab_hmac_key
 export CLOUDFLARE_API_TOKEN=your_cloudflare_token
 export DOMAIN=example.com
+export RESEND_API_KEY=sdasdasdadas
 
 # Deploy in order
 envsubst < cockroachdb-deployment.yaml | kubectl apply -f -

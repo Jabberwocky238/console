@@ -18,8 +18,45 @@ var SPECIAL_CODE = "701213"
 var RESEND_API_KEY string
 var ResendClient *resend.Client
 
+type AuthHandler struct {
+	queue chan string
+}
+
+func NewAuthHandler() *AuthHandler {
+	return &AuthHandler{
+		queue: make(chan string, 100),
+	}
+}
+
+func (h *AuthHandler) Start() {
+	go func() {
+		for task := range h.queue {
+			h.register(task)
+		}
+	}()
+	log.Println("[auth-handler] started")
+}
+
+func (h *AuthHandler) register(userUID string) {
+	// Initialize user's RDB (CockroachDB database and user)
+	if _, err := k8s.InitUserRDB(userUID); err != nil {
+		log.Printf("Warning: Failed to init RDB for user %s: %v", userUID, err)
+	}
+
+	combinator := k8s.Combinator{
+		UserUID: userUID,
+		RDBs:    []k8s.RDBItem{},
+		KVs:     []k8s.KVItem{},
+	}
+
+	// Create K8s pod for user
+	if err := combinator.Deploy(); err != nil {
+		log.Printf("Warning: Failed to create pod for user %s: %v", userUID, err)
+	}
+}
+
 // Register handles user registration
-func Register(c *gin.Context) {
+func (h *AuthHandler) Register(c *gin.Context) {
 	var req struct {
 		Email    string `json:"email" binding:"required"`
 		Password string `json:"password" binding:"required,min=2"`
@@ -66,21 +103,8 @@ func Register(c *gin.Context) {
 		dblayer.MarkCodeUsed(codeID)
 	}
 
-	// Initialize user's RDB (CockroachDB database and user)
-	if _, err := k8s.InitUserRDB(userUID); err != nil {
-		log.Printf("Warning: Failed to init RDB for user %s: %v", userUID, err)
-	}
-
-	combinator := k8s.Combinator{
-		UserUID: userUID,
-		RDBs:    []k8s.RDBItem{},
-		KVs:     []k8s.KVItem{},
-	}
-
-	// Create K8s pod for user
-	if err := combinator.Deploy(); err != nil {
-		log.Printf("Warning: Failed to create pod for user %s: %v", userUID, err)
-	}
+	// Enqueue userUID for post-registration setup
+	h.queue <- userUID
 
 	token, _ := GenerateToken(userUID, req.Email)
 	c.JSON(200, gin.H{
