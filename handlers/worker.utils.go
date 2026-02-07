@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"fmt"
 	"log"
 
 	"jabberwocky238/console/dblayer"
@@ -43,7 +42,7 @@ func (h *WorkerHandler) deploy(versionID int) {
 		return
 	}
 
-	name := fmt.Sprintf("%s-%s", w.WorkerID, w.UserUID)
+	name := controller.WorkerName(w.WorkerID, w.UserUID)
 	err = controller.CreateWorkerAppCR(
 		k8s.DynamicClient, name,
 		w.WorkerID, w.UserUID, v.Image, v.Port,
@@ -65,7 +64,7 @@ func syncEnvToConfigMap(workerID, userUID string, envMap map[string]string) erro
 	if k8s.K8sClient == nil {
 		return nil
 	}
-	name := fmt.Sprintf("%s-%s-env", workerID, userUID)
+	name := controller.WorkerName(workerID, userUID) + "-env"
 	ctx := context.Background()
 	client := k8s.K8sClient.CoreV1().ConfigMaps(k8s.WorkerNamespace)
 
@@ -82,7 +81,7 @@ func syncSecretsToK8s(workerID, userUID string, secretMap map[string]string) err
 	if k8s.K8sClient == nil {
 		return nil
 	}
-	name := fmt.Sprintf("%s-%s-secret", workerID, userUID)
+	name := controller.WorkerName(workerID, userUID) + "-secret"
 	ctx := context.Background()
 	client := k8s.K8sClient.CoreV1().Secrets(k8s.WorkerNamespace)
 
@@ -100,7 +99,7 @@ func syncSecretsToK8s(workerID, userUID string, secretMap map[string]string) err
 }
 
 func deleteWorkerCR(workerID, userUID string) {
-	name := fmt.Sprintf("%s-%s", workerID, userUID)
+	name := controller.WorkerName(workerID, userUID)
 	if err := controller.DeleteWorkerAppCR(k8s.DynamicClient, name); err != nil {
 		log.Printf("[worker] failed to delete CR for %s: %v", workerID, err)
 	}

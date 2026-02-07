@@ -22,9 +22,14 @@ type Worker struct {
 	Port     int    `json:"port"`
 }
 
+// WorkerName returns the canonical resource name for a worker.
+func WorkerName(workerID, ownerID string) string {
+	return fmt.Sprintf("w-%s-%s", workerID, ownerID)
+}
+
 // Name returns the worker's resource name
 func (w *Worker) Name() string {
-	return fmt.Sprintf("%s-%s", w.WorkerID, w.OwnerID)
+	return WorkerName(w.WorkerID, w.OwnerID)
 }
 
 func (w *Worker) Labels() map[string]string {
@@ -176,7 +181,7 @@ func (w *Worker) EnsureIngressRoute(ctx context.Context) error {
 		return fmt.Errorf("dynamic client not initialized")
 	}
 
-	host := fmt.Sprintf("%s.worker.%s", w.Name(), k8s.Domain)
+	host := fmt.Sprintf("%s-%s.worker.%s", w.WorkerID, w.OwnerID, k8s.Domain)
 
 	ingressRoute := &unstructured.Unstructured{
 		Object: map[string]any{
@@ -269,4 +274,3 @@ func ListWorkers(workerId string, ownerId string) ([]Worker, error) {
 	}
 	return workers, nil
 }
-

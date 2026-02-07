@@ -172,7 +172,7 @@ function WorkerPage() {
   const navigate = useNavigate()
   if (loading) return <div className="text-zinc-500">Loading...</div>
   if (error) return <div className="text-red-400">{error}</div>
-  const workers = data as { worker_id: string; worker_name: string; status: string; active_version_id: number | null }[] | null
+  const workers = data as { worker_id: string; worker_name: string; status: string; active_version_id: number | null; url: string }[] | null
   return (
     <div>
       <h2 className="text-lg font-semibold mb-4">Worker</h2>
@@ -182,6 +182,7 @@ function WorkerPage() {
             <tr className="text-left text-zinc-400 border-b border-zinc-800">
               <th className="pb-2 pr-4">ID</th>
               <th className="pb-2 pr-4">Name</th>
+              <th className="pb-2 pr-4">URL</th>
               <th className="pb-2 pr-4">Status</th>
               <th className="pb-2">Active Version</th>
             </tr>
@@ -195,6 +196,12 @@ function WorkerPage() {
               >
                 <td className="py-2 pr-4 font-mono text-zinc-300">{w.worker_id}</td>
                 <td className="py-2 pr-4">{w.worker_name}</td>
+                <td className="py-2 pr-4">
+                  <a href={w.url} target="_blank" rel="noreferrer"
+                    className="text-blue-400 hover:text-blue-300 font-mono text-xs"
+                    onClick={e => e.stopPropagation()}
+                  >{w.url}</a>
+                </td>
                 <td className="py-2 pr-4"><StatusBadge status={w.status} /></td>
                 <td className="py-2">{w.active_version_id ?? 'none'}</td>
               </tr>
@@ -308,6 +315,7 @@ function WorkerDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [worker, setWorker] = useState<any>(null)
+  const [workerURL, setWorkerURL] = useState('')
   const [versions, setVersions] = useState<any[]>([])
   const [env, setEnv] = useState<Record<string, string>>({})
   const [secrets, setSecrets] = useState<string[]>([])
@@ -333,6 +341,7 @@ function WorkerDetailPage() {
         workerAPI.getSecrets(id),
       ])
       setWorker(detail.worker)
+      setWorkerURL(detail.url ?? '')
       setVersions(detail.versions ?? [])
       setEnv(envData ?? {})
       setSecrets(secretData ?? [])
@@ -397,6 +406,14 @@ function WorkerDetailPage() {
         <StatusBadge status={worker.status} />
         <span className="text-xs text-zinc-500 font-mono">{worker.worker_id}</span>
       </div>
+      {workerURL && (
+        <div className="text-sm">
+          <span className="text-zinc-400">URL: </span>
+          <a href={workerURL} target="_blank" rel="noreferrer"
+            className="text-blue-400 hover:text-blue-300 font-mono text-xs"
+          >{workerURL}</a>
+        </div>
+      )}
 
       {/* Env Section */}
       <EnvSection

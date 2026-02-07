@@ -2,7 +2,9 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"time"
 
 	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apiextclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
@@ -55,14 +57,29 @@ func EnsureCRD(config *rest.Config) error {
 		if err != nil {
 			return err
 		}
-		log.Printf("[controller] CRD %s created", crd.Name)
+		log.Printf("[controller] CRD %s created, waiting for it to be established", crd.Name)
 	} else if err != nil {
-		return err
+		return fmt.Errorf("get CRD %s: %w", crd.Name, err)
 	} else {
 		log.Printf("[controller] CRD %s already exists", crd.Name)
+		return nil
 	}
 
-	return nil
+	// Wait for CRD to become Established
+	for i := 0; i < 30; i++ {
+		time.Sleep(time.Second)
+		got, err := crdClient.Get(ctx, crd.Name, metav1.GetOptions{})
+		if err != nil {
+			continue
+		}
+		for _, c := range got.Status.Conditions {
+			if c.Type == apiextv1.Established && c.Status == apiextv1.ConditionTrue {
+				log.Printf("[controller] CRD %s established", crd.Name)
+				return nil
+			}
+		}
+	}
+	return fmt.Errorf("CRD %s not established after 30s", crd.Name)
 }
 
 func workerAppSchema() *apiextv1.JSONSchemaProps {

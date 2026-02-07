@@ -2,14 +2,21 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"strconv"
 
 	"jabberwocky238/console/dblayer"
+	"jabberwocky238/console/k8s"
+	"jabberwocky238/console/k8s/controller"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
+
+func workerURL(workerID, userUID string) string {
+	return fmt.Sprintf("https://%s.worker.%s", controller.WorkerName(workerID, userUID), k8s.Domain)
+}
 
 type workerTask struct {
 	kind      string // "deploy", "sync_env", "sync_secret", "delete_cr"
@@ -94,7 +101,17 @@ func (h *WorkerHandler) ListWorkers(c *gin.Context) {
 		return
 	}
 
-	c.JSON(200, workers)
+	result := make([]gin.H, len(workers))
+	for i, w := range workers {
+		result[i] = gin.H{
+			"worker_id":         w.WorkerID,
+			"worker_name":       w.WorkerName,
+			"status":            w.Status,
+			"active_version_id": w.ActiveVersionID,
+			"url":               workerURL(w.WorkerID, w.UserUID),
+		}
+	}
+	c.JSON(200, result)
 }
 
 // GetWorker 获取单个 worker 详情，附带最近10条 version
@@ -124,6 +141,7 @@ func (h *WorkerHandler) GetWorker(c *gin.Context) {
 	c.JSON(200, gin.H{
 		"worker":   w,
 		"versions": versions,
+		"url":      workerURL(w.WorkerID, w.UserUID),
 	})
 }
 
