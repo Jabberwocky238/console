@@ -1,4 +1,4 @@
-# Control Plane Deployment for K3s
+# Control Plane Deployment for K3s, version 8848
 ---
 apiVersion: v1
 kind: Namespace
