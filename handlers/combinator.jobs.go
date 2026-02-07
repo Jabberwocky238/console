@@ -31,6 +31,10 @@ func (j *CreateRDBJob) Type() string { return "combinator.create_rdb" }
 func (j *CreateRDBJob) ID() string   { return j.RecordID }
 
 func (j *CreateRDBJob) Do() error {
+	if k8s.RDBManager == nil {
+		dblayer.UpdateCombinatorResourceStatus(j.RecordID, "error", "cockroachdb not available")
+		return fmt.Errorf("cockroachdb not available")
+	}
 	if err := k8s.RDBManager.CreateSchema(j.UserUID, j.ResourceID); err != nil {
 		dblayer.UpdateCombinatorResourceStatus(j.RecordID, "error", err.Error())
 		return fmt.Errorf("create schema: %w", err)
@@ -73,8 +77,10 @@ func (j *DeleteRDBJob) Type() string { return "combinator.delete_rdb" }
 func (j *DeleteRDBJob) ID() string   { return j.ResourceID }
 
 func (j *DeleteRDBJob) Do() error {
-	if err := k8s.RDBManager.DeleteSchema(j.UserUID, j.ResourceID); err != nil {
-		log.Printf("[combinator] delete schema %s failed: %v", j.ResourceID, err)
+	if k8s.RDBManager != nil {
+		if err := k8s.RDBManager.DeleteSchema(j.UserUID, j.ResourceID); err != nil {
+			log.Printf("[combinator] delete schema %s failed: %v", j.ResourceID, err)
+		}
 	}
 
 	cfg, err := controller.GetCombinatorConfig(k8s.DynamicClient, j.UserUID)

@@ -1,8 +1,6 @@
 package k8s
 
 import (
-	"database/sql"
-
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
@@ -65,18 +63,4 @@ func InitK8s(kubeconfig string) error {
 
 	DynamicClient, err = dynamic.NewForConfig(config)
 	return err
-}
-
-// InitRDBManager creates a RootRDBManager with a persistent admin connection
-func InitRDBManager() error {
-	db, err := sql.Open("postgres", CockroachDBAdminDSN)
-	if err != nil {
-		return err
-	}
-	if err := db.Ping(); err != nil {
-		db.Close()
-		return err
-	}
-	RDBManager = &RootRDBManager{db: db}
-	return nil
 }

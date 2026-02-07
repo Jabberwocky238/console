@@ -67,11 +67,9 @@ func main() {
 
 	// 2. CockroachDB
 	if err := k8s.InitRDBManager(); err != nil {
-		log.Printf("Warning: CockroachDB admin init failed: %v", err)
-	} else {
-		log.Println("CockroachDB admin connection initialized")
-		app.Register(k8s.RDBManager)
+		panic("CockroachDB init failed: " + err.Error())
 	}
+	app.Register(k8s.RDBManager)
 
 	// 3. K8s + Controller
 	if err := k8s.InitK8s(*kubeconfig); err != nil {

@@ -3,6 +3,7 @@ package k8s
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 
@@ -11,13 +12,52 @@ import (
 
 // RootRDBManager holds a persistent admin connection to CockroachDB
 type RootRDBManager struct {
-	mu sync.Mutex
-	db *sql.DB
+	mu  sync.Mutex
+	db  *sql.DB
+	dsn string
+}
+
+func InitRDBManager() error {
+	RDBManager = &RootRDBManager{dsn: CockroachDBAdminDSN}
+	_, err := RDBManager.tryGetDB()
+	return err
+}
+
+// tryGetDB returns a healthy *sql.DB, reconnecting if needed (up to 3 attempts)
+func (m *RootRDBManager) tryGetDB() (*sql.DB, error) {
+	if m.db != nil {
+		if err := m.db.Ping(); err == nil {
+			return m.db, nil
+		}
+		log.Println("[rdb] existing connection lost, reconnecting...")
+		m.db.Close()
+		m.db = nil
+	}
+	for i := 0; i < 3; i++ {
+		db, err := sql.Open("postgres", m.dsn)
+		if err != nil {
+			return nil, fmt.Errorf("sql.Open failed: %w", err)
+		}
+		if err := db.Ping(); err != nil {
+			log.Printf("[rdb] ping attempt %d/3 failed: %v", i+1, err)
+			db.Close()
+			continue
+		}
+		log.Printf("[rdb] reconnected on attempt %d/3", i+1)
+		m.db = db
+		return db, nil
+	}
+	return nil, fmt.Errorf("cockroachdb unreachable after 3 attempts")
 }
 
 // Close closes the persistent admin connection
 func (m *RootRDBManager) Close() error {
-	return m.db.Close()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.db != nil {
+		return m.db.Close()
+	}
+	return nil
 }
 
 // sanitize replaces invalid characters for SQL identifiers
@@ -68,15 +108,19 @@ func (m *RootRDBManager) useDB(userUID string) string {
 func (m *RootRDBManager) CreateSchema(userUID, schemaID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	db, err := m.tryGetDB()
+	if err != nil {
+		return err
+	}
 	r := newUserRDB(userUID)
-	if _, err := m.db.Exec(m.useDB(userUID)); err != nil {
+	if _, err := db.Exec(m.useDB(userUID)); err != nil {
 		return err
 	}
 	schName := fmt.Sprintf("schema_%s", sanitize(schemaID))
-	if _, err := m.db.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", schName)); err != nil {
+	if _, err := db.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", schName)); err != nil {
 		return err
 	}
-	_, err := m.db.Exec(fmt.Sprintf("GRANT ALL ON SCHEMA %s TO %s", schName, r.username()))
+	_, err = db.Exec(fmt.Sprintf("GRANT ALL ON SCHEMA %s TO %s", schName, r.username()))
 	return err
 }
 
@@ -84,11 +128,15 @@ func (m *RootRDBManager) CreateSchema(userUID, schemaID string) error {
 func (m *RootRDBManager) DeleteSchema(userUID, schemaID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if _, err := m.db.Exec(m.useDB(userUID)); err != nil {
+	db, err := m.tryGetDB()
+	if err != nil {
+		return err
+	}
+	if _, err := db.Exec(m.useDB(userUID)); err != nil {
 		return err
 	}
 	schName := fmt.Sprintf("schema_%s", sanitize(schemaID))
-	_, err := m.db.Exec(fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", schName))
+	_, err = db.Exec(fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", schName))
 	return err
 }
 
@@ -96,10 +144,14 @@ func (m *RootRDBManager) DeleteSchema(userUID, schemaID string) error {
 func (m *RootRDBManager) ListSchemas(userUID string) ([]string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if _, err := m.db.Exec(m.useDB(userUID)); err != nil {
+	db, err := m.tryGetDB()
+	if err != nil {
 		return nil, err
 	}
-	rows, err := m.db.Query(`SELECT schema_name FROM information_schema.schemata WHERE schema_name LIKE 'schema_%'`)
+	if _, err := db.Exec(m.useDB(userUID)); err != nil {
+		return nil, err
+	}
+	rows, err := db.Query(`SELECT schema_name FROM information_schema.schemata WHERE schema_name LIKE 'schema_%'`)
 	if err != nil {
 		return nil, err
 	}
@@ -119,49 +171,65 @@ func (m *RootRDBManager) ListSchemas(userUID string) ([]string, error) {
 func (m *RootRDBManager) SchemaExists(userUID, schemaID string) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if _, err := m.db.Exec(m.useDB(userUID)); err != nil {
+	db, err := m.tryGetDB()
+	if err != nil {
+		return false, err
+	}
+	if _, err := db.Exec(m.useDB(userUID)); err != nil {
 		return false, err
 	}
 	schName := fmt.Sprintf("schema_%s", sanitize(schemaID))
 	var count int
-	err := m.db.QueryRow(`SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name = $1`, schName).Scan(&count)
+	err = db.QueryRow(`SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name = $1`, schName).Scan(&count)
 	return count > 0, err
 }
 
 // InitUserRDB creates user and database for new user
 func (m *RootRDBManager) InitUserRDB(userUID string) error {
+	db, err := m.tryGetDB()
+	if err != nil {
+		return err
+	}
 	r := newUserRDB(userUID)
-
-	if _, err := m.db.Exec(fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s", r.database())); err != nil {
+	if _, err := db.Exec(fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s", r.database())); err != nil {
 		return err
 	}
-	if _, err := m.db.Exec(fmt.Sprintf("CREATE USER IF NOT EXISTS %s", r.username())); err != nil {
+	if _, err := db.Exec(fmt.Sprintf("CREATE USER IF NOT EXISTS %s", r.username())); err != nil {
 		return err
 	}
-	if _, err := m.db.Exec(fmt.Sprintf("GRANT ALL ON DATABASE %s TO %s", r.database(), r.username())); err != nil {
-		return err
-	}
-
-	return nil
+	_, err = db.Exec(fmt.Sprintf("GRANT ALL ON DATABASE %s TO %s", r.database(), r.username()))
+	return err
 }
 
 // DeleteUserRDB deletes user's database and user
 func (m *RootRDBManager) DeleteUserRDB(userUID string) error {
+	db, err := m.tryGetDB()
+	if err != nil {
+		return err
+	}
 	r := newUserRDB(userUID)
-	m.db.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s CASCADE", r.database()))
-	m.db.Exec(fmt.Sprintf("DROP USER IF EXISTS %s", r.username()))
+	db.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s CASCADE", r.database()))
+	db.Exec(fmt.Sprintf("DROP USER IF EXISTS %s", r.username()))
 	return nil
 }
 
 // DropDatabase 直接按数据库名删除（用于清理孤儿）
 func (m *RootRDBManager) DropDatabase(dbName string) error {
-	_, err := m.db.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s CASCADE", dbName))
+	db, err := m.tryGetDB()
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s CASCADE", dbName))
 	return err
 }
 
 // ListUserDatabases 列出 CockroachDB 中所有 db_ 前缀的数据库名
 func (m *RootRDBManager) ListUserDatabases() ([]string, error) {
-	rows, err := m.db.Query(`SHOW DATABASES`)
+	db, err := m.tryGetDB()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := db.Query(`SHOW DATABASES`)
 	if err != nil {
 		return nil, err
 	}
@@ -184,11 +252,15 @@ func (m *RootRDBManager) ListUserDatabases() ([]string, error) {
 func (m *RootRDBManager) DatabaseSize(userUID string) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if _, err := m.db.Exec(m.useDB(userUID)); err != nil {
+	db, err := m.tryGetDB()
+	if err != nil {
+		return 0, err
+	}
+	if _, err := db.Exec(m.useDB(userUID)); err != nil {
 		return 0, err
 	}
 	var size int64
-	err := m.db.QueryRow(
+	err = db.QueryRow(
 		`SELECT COALESCE(SUM(total_bytes), 0)
 		 FROM crdb_internal.table_span_stats`).Scan(&size)
 	return size, err
@@ -198,12 +270,16 @@ func (m *RootRDBManager) DatabaseSize(userUID string) (int64, error) {
 func (m *RootRDBManager) SchemaSize(userUID, schemaID string) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if _, err := m.db.Exec(m.useDB(userUID)); err != nil {
+	db, err := m.tryGetDB()
+	if err != nil {
+		return 0, err
+	}
+	if _, err := db.Exec(m.useDB(userUID)); err != nil {
 		return 0, err
 	}
 	schName := fmt.Sprintf("schema_%s", sanitize(schemaID))
 	var size int64
-	err := m.db.QueryRow(
+	err = db.QueryRow(
 		`SELECT COALESCE(SUM(s.total_bytes), 0)
 		 FROM crdb_internal.table_span_stats s
 		 JOIN crdb_internal.tables t ON t.table_id = s.table_id
