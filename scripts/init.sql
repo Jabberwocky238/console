@@ -60,6 +60,20 @@ CREATE TABLE IF NOT EXISTS worker_deploy_versions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_wdv_worker_id ON worker_deploy_versions(worker_id);
+
+-- Combinator resources table
+CREATE TABLE IF NOT EXISTS combinator_resources (
+    id VARCHAR(16) PRIMARY KEY,
+    user_uid VARCHAR(64) NOT NULL,
+    resource_type VARCHAR(32) NOT NULL,
+    resource_id VARCHAR(64) NOT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'loading',
+    msg TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_combinator_resources_user_uid ON combinator_resources(user_uid);
+
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_verification_codes_email ON verification_codes(email);
 CREATE INDEX IF NOT EXISTS idx_custom_domains_user_uid ON custom_domains(user_uid);

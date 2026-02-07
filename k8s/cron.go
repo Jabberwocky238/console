@@ -12,8 +12,9 @@ type CronScheduler struct {
 	stopCh         chan struct{}
 }
 
-func NewCronScheduler() *CronScheduler {
+func NewCronScheduler(proc *Processor) *CronScheduler {
 	return &CronScheduler{
+		processor:      proc,
 		durationToCall: make(map[time.Duration][]Job),
 		timerMap:       make(map[time.Duration]*time.Ticker),
 		stopCh:         make(chan struct{}),

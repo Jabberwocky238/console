@@ -56,3 +56,14 @@ type WorkerDeployVersion struct {
 	Msg       string    `json:"msg"`
 	CreatedAt time.Time `json:"created_at"`
 }
+
+// CombinatorResource model
+type CombinatorResource struct {
+	ID           string    `json:"id"`
+	UserUID      string    `json:"user_uid"`
+	ResourceType string    `json:"resource_type"` // rdb, kv
+	ResourceID   string    `json:"resource_id"`
+	Status       string    `json:"status"` // loading, error, active
+	Msg          string    `json:"msg"`
+	CreatedAt    time.Time `json:"created_at"`
+}

@@ -5,16 +5,35 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	_ "github.com/lib/pq"
 )
 
-var (
-	RDBNamespace        = "cockroachdb"
-	CockroachDBHost     = "cockroachdb-public.cockroachdb.svc.cluster.local"
-	CockroachDBPort     = "26257"
-	CockroachDBAdminDSN = "postgresql://root@cockroachdb-public.cockroachdb.svc.cluster.local:26257?sslmode=disable"
-)
+// RootRDBManager holds a persistent admin connection to CockroachDB
+type RootRDBManager struct {
+	mu sync.Mutex
+	db *sql.DB
+}
+
+// InitRDBManager creates a RootRDBManager with a persistent admin connection
+func InitRDBManager() error {
+	db, err := sql.Open("postgres", CockroachDBAdminDSN)
+	if err != nil {
+		return err
+	}
+	if err := db.Ping(); err != nil {
+		db.Close()
+		return err
+	}
+	RDBManager = &RootRDBManager{db: db}
+	return nil
+}
+
+// Close closes the persistent admin connection
+func (m *RootRDBManager) Close() error {
+	return m.db.Close()
+}
 
 func init() {
 	if v := os.Getenv("COCKROACHDB_ADMIN_DSN"); v != "" {
@@ -28,11 +47,6 @@ func init() {
 	}
 }
 
-// UserRDB represents user's database info
-type UserRDB struct {
-	UserUID string
-}
-
 // sanitize replaces invalid characters for SQL identifiers
 func sanitize(s string) string {
 	s = strings.ReplaceAll(s, "-", "_")
@@ -40,73 +54,79 @@ func sanitize(s string) string {
 	return strings.ToLower(s)
 }
 
-// Username returns user_<uid>
-func (r *UserRDB) Username() string {
-	return fmt.Sprintf("user_%s", sanitize(r.UserUID))
+// userRDB represents user's database info (internal only)
+type userRDB struct {
+	userUID string
 }
 
-// Database returns db_<uid>
-func (r *UserRDB) Database() string {
-	return fmt.Sprintf("db_%s", sanitize(r.UserUID))
+func newUserRDB(userUID string) *userRDB {
+	return &userRDB{userUID: userUID}
 }
 
-// DSN returns full connection string (no password in insecure mode)
-func (r *UserRDB) DSN() string {
-	return fmt.Sprintf("postgresql://%s@%s:%s/%s?sslmode=disable",
-		r.Username(), CockroachDBHost, CockroachDBPort, r.Database())
+func (r *userRDB) username() string {
+	return fmt.Sprintf("user_%s", sanitize(r.userUID))
 }
 
-// DSNWithSchema returns connection string with specific schema
-func (r *UserRDB) DSNWithSchema(schemaID string) string {
+func (r *userRDB) database() string {
+	return fmt.Sprintf("db_%s", sanitize(r.userUID))
+}
+
+func (r *userRDB) dsnWithSchema(schemaID string) string {
 	schName := fmt.Sprintf("schema_%s", sanitize(schemaID))
 	return fmt.Sprintf("postgresql://%s@%s:%s/%s?sslmode=disable&search_path=%s",
-		r.Username(), CockroachDBHost, CockroachDBPort, r.Database(), schName)
+		r.username(), CockroachDBHost, CockroachDBPort, r.database(), schName)
 }
 
-// getDB returns connection to user's database
-func (r *UserRDB) getDB() (*sql.DB, error) {
-	dsn := fmt.Sprintf("postgresql://%s@%s:%s/%s?sslmode=disable", r.Username(), CockroachDBHost, CockroachDBPort, r.Database())
-	return sql.Open("postgres", dsn)
+// DSNWithSchema returns connection string with specific schema (exported for external use)
+func (m *RootRDBManager) DSNWithSchema(userUID, schemaID string) string {
+	return newUserRDB(userUID).dsnWithSchema(schemaID)
+}
+
+// DatabaseName returns db_<uid> (exported for external use)
+func (m *RootRDBManager) DatabaseName(userUID string) string {
+	return newUserRDB(userUID).database()
+}
+
+func (m *RootRDBManager) useDB(userUID string) string {
+	return fmt.Sprintf("SET DATABASE = %s", newUserRDB(userUID).database())
 }
 
 // CreateSchema creates a new schema in user's database
-func (r *UserRDB) CreateSchema(schemaID string) error {
-	db, err := r.getDB()
-	if err != nil {
+func (m *RootRDBManager) CreateSchema(userUID, schemaID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r := newUserRDB(userUID)
+	if _, err := m.db.Exec(m.useDB(userUID)); err != nil {
 		return err
 	}
-	defer db.Close()
-
 	schName := fmt.Sprintf("schema_%s", sanitize(schemaID))
-	if _, err := db.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", schName)); err != nil {
+	if _, err := m.db.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", schName)); err != nil {
 		return err
 	}
-	_, err = db.Exec(fmt.Sprintf("GRANT ALL ON SCHEMA %s TO %s", schName, r.Username()))
+	_, err := m.db.Exec(fmt.Sprintf("GRANT ALL ON SCHEMA %s TO %s", schName, r.username()))
 	return err
 }
 
 // DeleteSchema deletes a schema from user's database
-func (r *UserRDB) DeleteSchema(schemaID string) error {
-	db, err := r.getDB()
-	if err != nil {
+func (m *RootRDBManager) DeleteSchema(userUID, schemaID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, err := m.db.Exec(m.useDB(userUID)); err != nil {
 		return err
 	}
-	defer db.Close()
-
 	schName := fmt.Sprintf("schema_%s", sanitize(schemaID))
-	_, err = db.Exec(fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", schName))
+	_, err := m.db.Exec(fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", schName))
 	return err
 }
 
 // ListSchemas lists all schemas in user's database
-func (r *UserRDB) ListSchemas() ([]string, error) {
-	db, err := r.getDB()
-	if err != nil {
+func (m *RootRDBManager) ListSchemas(userUID string) ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, err := m.db.Exec(m.useDB(userUID)); err != nil {
 		return nil, err
 	}
-	defer db.Close()
-
-	rows, err := db.Query(`SELECT schema_name FROM information_schema.schemata WHERE schema_name LIKE 'schema_%'`)
+	rows, err := m.db.Query(`SELECT schema_name FROM information_schema.schemata WHERE schema_name LIKE 'schema_%'`)
 	if err != nil {
 		return nil, err
 	}
@@ -123,91 +143,67 @@ func (r *UserRDB) ListSchemas() ([]string, error) {
 }
 
 // SchemaExists checks if schema exists
-func (r *UserRDB) SchemaExists(schemaID string) (bool, error) {
-	db, err := r.getDB()
-	if err != nil {
+func (m *RootRDBManager) SchemaExists(userUID, schemaID string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, err := m.db.Exec(m.useDB(userUID)); err != nil {
 		return false, err
 	}
-	defer db.Close()
-
 	schName := fmt.Sprintf("schema_%s", sanitize(schemaID))
 	var count int
-	err = db.QueryRow(`SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name = $1`, schName).Scan(&count)
+	err := m.db.QueryRow(`SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name = $1`, schName).Scan(&count)
 	return count > 0, err
 }
 
 // InitUserRDB creates user and database for new user
-func InitUserRDB(userUID string) (*UserRDB, error) {
-	db, err := sql.Open("postgres", CockroachDBAdminDSN)
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
+func (m *RootRDBManager) InitUserRDB(userUID string) error {
+	r := newUserRDB(userUID)
 
-	r := &UserRDB{UserUID: userUID}
-
-	// Create database
-	if _, err := db.Exec(fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s", r.Database())); err != nil {
-		return nil, err
-	}
-
-	// Create user (no password in insecure mode)
-	if _, err := db.Exec(fmt.Sprintf("CREATE USER IF NOT EXISTS %s", r.Username())); err != nil {
-		return nil, err
-	}
-
-	// Grant privileges
-	if _, err := db.Exec(fmt.Sprintf("GRANT ALL ON DATABASE %s TO %s", r.Database(), r.Username())); err != nil {
-		return nil, err
-	}
-
-	return r, nil
-}
-
-// DeleteUserRDB deletes user's database and user
-func DeleteUserRDB(userUID string) error {
-	db, err := sql.Open("postgres", CockroachDBAdminDSN)
-	if err != nil {
+	if _, err := m.db.Exec(fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s", r.database())); err != nil {
 		return err
 	}
-	defer db.Close()
+	if _, err := m.db.Exec(fmt.Sprintf("CREATE USER IF NOT EXISTS %s", r.username())); err != nil {
+		return err
+	}
+	if _, err := m.db.Exec(fmt.Sprintf("GRANT ALL ON DATABASE %s TO %s", r.database(), r.username())); err != nil {
+		return err
+	}
 
-	r := &UserRDB{UserUID: userUID}
-	db.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s CASCADE", r.Database()))
-	db.Exec(fmt.Sprintf("DROP USER IF EXISTS %s", r.Username()))
 	return nil
 }
 
-// DatabaseSize returns the total size of user's database in bytes
-func (r *UserRDB) DatabaseSize() (int64, error) {
-	db, err := r.getDB()
-	if err != nil {
-		return 0, err
-	}
-	defer db.Close()
-
-	var size int64
-	err = db.QueryRow(
-		`SELECT COALESCE(SUM(range_size_mb), 0) * 1024 * 1024
-		 FROM crdb_internal.ranges
-		 WHERE database_name = $1`, r.Database()).Scan(&size)
-	return size, err
+// DeleteUserRDB deletes user's database and user
+func (m *RootRDBManager) DeleteUserRDB(userUID string) error {
+	r := newUserRDB(userUID)
+	m.db.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s CASCADE", r.database()))
+	m.db.Exec(fmt.Sprintf("DROP USER IF EXISTS %s", r.username()))
+	return nil
 }
 
-// SchemaSize returns the total size of a specific schema in bytes
-func (r *UserRDB) SchemaSize(schemaID string) (int64, error) {
-	db, err := r.getDB()
-	if err != nil {
-		return 0, err
-	}
-	defer db.Close()
-
-	schName := fmt.Sprintf("schema_%s", sanitize(schemaID))
-	var size int64
-	err = db.QueryRow(
-		`SELECT COALESCE(SUM(crdb_internal.table_span_stats.total_bytes), 0)
-		 FROM crdb_internal.table_span_stats
-		 JOIN crdb_internal.tables ON tables.table_id = table_span_stats.table_id
-		 WHERE tables.schema_name = $1`, schName).Scan(&size)
-	return size, err
+// DropDatabase 直接按数据库名删除（用于清理孤儿）
+func (m *RootRDBManager) DropDatabase(dbName string) error {
+	_, err := m.db.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s CASCADE", dbName))
+	return err
 }
+
+// ListUserDatabases 列出 CockroachDB 中所有 db_ 前缀的数据库名
+func (m *RootRDBManager) ListUserDatabases() ([]string, error) {
+	rows, err := m.db.Query(`SHOW DATABASES`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var dbs []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		if strings.HasPrefix(name, "db_") {
+			dbs = append(dbs, name)
+		}
+	}
+	return dbs, nil
+}
+

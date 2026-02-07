@@ -83,6 +83,24 @@ func GetCombinatorAppConfig(client dynamic.Interface, ownerID string) (*Combinat
 	return combinatorFromUnstructured(cr), nil
 }
 
+// GetCombinatorConfig reads and parses the config directly into CombinatorConfig
+func GetCombinatorConfig(client dynamic.Interface, ownerID string) (*CombinatorConfig, error) {
+	combinator, err := GetCombinatorAppConfig(client, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	return combinator.ParseConfig()
+}
+
+// UpdateCombinatorConfig marshals CombinatorConfig and writes it back to the CR
+func UpdateCombinatorConfig(client dynamic.Interface, ownerID string, cfg *CombinatorConfig) error {
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+	return UpdateCombinatorAppConfig(client, ownerID, string(data))
+}
+
 // DeleteCombinatorAppCR deletes a CombinatorApp CR
 func DeleteCombinatorAppCR(client dynamic.Interface, ownerID string) error {
 	name := fmt.Sprintf("combinator-%s", ownerID)

@@ -2,13 +2,15 @@ package main
 
 import (
 	"flag"
+	"log"
+	"os"
+	"path"
+	"time"
+
 	"jabberwocky238/console/dblayer"
 	"jabberwocky238/console/handlers"
 	"jabberwocky238/console/k8s"
 	"jabberwocky238/console/k8s/controller"
-	"log"
-	"os"
-	"path"
 
 	"github.com/gin-gonic/gin"
 	"github.com/resend/resend-go/v3"
@@ -32,6 +34,15 @@ func main() {
 		log.Fatal("Failed to connect to database:", err)
 	}
 	defer dblayer.DB.Close()
+
+	// Initialize CockroachDB admin connection
+	if err := k8s.InitRDBManager(); err != nil {
+		log.Printf("Warning: CockroachDB admin init failed: %v", err)
+		log.Println("Running without CockroachDB integration")
+	} else {
+		log.Println("CockroachDB admin connection initialized")
+		defer k8s.RDBManager.Close()
+	}
 
 	// Initialize K8s client
 	if err := k8s.InitK8s(*kubeconfig); err != nil {
@@ -65,6 +76,13 @@ func main() {
 
 	// Start periodic domain check
 	k8s.StartPeriodicCheck()
+
+	// Start cron scheduler for periodic jobs
+	cron := k8s.NewCronScheduler(proc)
+	cron.RegisterJob(24*time.Hour, &handlers.UserAuditJob{})
+	proc.Submit(&handlers.UserAuditJob{}) // Run once at startup
+	cron.Start()
+	defer cron.Stop()
 
 	log.Println("Control plane starting...")
 

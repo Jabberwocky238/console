@@ -17,6 +17,13 @@ var (
 	CombinatorNamespace = "combinator" // Combinator pods namespace
 	IngressNamespace    = "ingress"    // Ingress namespace
 	WorkerNamespace     = "worker"     // Worker namespace
+
+	RDBNamespace        = "cockroachdb"
+	CockroachDBHost     = "cockroachdb-public.cockroachdb.svc.cluster.local"
+	CockroachDBPort     = "26257"
+	CockroachDBAdminDSN = "postgresql://root@cockroachdb-public.cockroachdb.svc.cluster.local:26257?sslmode=disable"
+
+	RDBManager *RootRDBManager
 )
 
 var IngressRouteGVR = schema.GroupVersionResource{

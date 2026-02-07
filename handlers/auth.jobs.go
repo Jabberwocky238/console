@@ -22,8 +22,12 @@ func (j *RegisterUserJob) ID() string {
 }
 
 func (j *RegisterUserJob) Do() error {
-	if _, err := k8s.InitUserRDB(j.UserUID); err != nil {
-		log.Printf("Warning: Failed to init RDB for user %s: %v", j.UserUID, err)
+	if k8s.RDBManager != nil {
+		if err := k8s.RDBManager.InitUserRDB(j.UserUID); err != nil {
+			log.Printf("Warning: Failed to init RDB for user %s: %v", j.UserUID, err)
+		}
+	} else {
+		log.Printf("Warning: RDBManager not initialized, skip RDB init for user %s", j.UserUID)
 	}
 
 	if k8s.DynamicClient == nil {

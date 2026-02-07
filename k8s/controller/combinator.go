@@ -11,7 +11,6 @@ import (
 
 	"jabberwocky238/console/k8s"
 
-	"github.com/google/uuid"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -69,60 +68,6 @@ func (c *Combinator) ParseConfig() (*CombinatorConfig, error) {
 	return cfg, nil
 }
 
-// AddRDB creates a new schema and returns updated config JSON
-func (c *Combinator) AddRDB(name string) (string, string, error) {
-	id := uuid.New().String()[:8]
-
-	userRDB := k8s.UserRDB{UserUID: c.UserUID}
-	if err := userRDB.CreateSchema(id); err != nil {
-		return "", "", fmt.Errorf("create schema failed: %w", err)
-	}
-
-	cfg, err := c.ParseConfig()
-	if err != nil {
-		return "", "", err
-	}
-
-	cfg.RDBs = append(cfg.RDBs, RDBItem{
-		ID:   id,
-		Name: name,
-		URL:  userRDB.DSNWithSchema(id),
-	})
-
-	newConfig, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return "", "", err
-	}
-
-	return id, string(newConfig), nil
-}
-
-// DeleteRDB deletes schema and returns updated config JSON
-func (c *Combinator) DeleteRDB(id string) (string, error) {
-	userRDB := k8s.UserRDB{UserUID: c.UserUID}
-	if err := userRDB.DeleteSchema(id); err != nil {
-		return "", fmt.Errorf("delete schema failed: %w", err)
-	}
-
-	cfg, err := c.ParseConfig()
-	if err != nil {
-		return "", err
-	}
-
-	for i, rdb := range cfg.RDBs {
-		if rdb.ID == id {
-			cfg.RDBs = append(cfg.RDBs[:i], cfg.RDBs[i+1:]...)
-			break
-		}
-	}
-
-	newConfig, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return "", err
-	}
-
-	return string(newConfig), nil
-}
 
 // EnsureConfigMap ensures the ConfigMap exists with the correct config
 func (c *Combinator) EnsureConfigMap(ctx context.Context) error {

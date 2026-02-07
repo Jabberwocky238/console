@@ -1,10 +1,8 @@
 package handlers
 
 import (
-	"encoding/json"
-
+	"jabberwocky238/console/dblayer"
 	"jabberwocky238/console/k8s"
-	"jabberwocky238/console/k8s/controller"
 
 	"github.com/gin-gonic/gin"
 )
@@ -17,7 +15,7 @@ func NewCombinatorHandler(proc *k8s.Processor) *CombinatorHandler {
 	return &CombinatorHandler{proc: proc}
 }
 
-// CreateRDB creates a new RDB resource
+// CreateRDB creates a new RDB resource record and submits async job
 func (h *CombinatorHandler) CreateRDB(c *gin.Context) {
 	userUID := c.GetString("user_id")
 	var req struct {
@@ -28,67 +26,32 @@ func (h *CombinatorHandler) CreateRDB(c *gin.Context) {
 		return
 	}
 
-	combinator, err := controller.GetCombinatorAppConfig(k8s.DynamicClient, userUID)
-	if err != nil {
-		c.JSON(500, gin.H{"error": "failed to get combinator config: " + err.Error()})
+	id := GenerateResourceUID()
+	resourceID := GenerateResourceUID()
+	if err := dblayer.CreateCombinatorResource(id, userUID, "rdb", resourceID); err != nil {
+		c.JSON(500, gin.H{"error": "failed to create resource: " + err.Error()})
 		return
 	}
 
-	id, newConfig, err := combinator.AddRDB(req.Name)
-	if err != nil {
-		c.JSON(500, gin.H{"error": "failed to create RDB: " + err.Error()})
-		return
-	}
+	h.proc.Submit(NewCreateRDBJob(id, userUID, req.Name, resourceID))
 
-	if err := controller.UpdateCombinatorAppConfig(k8s.DynamicClient, userUID, newConfig); err != nil {
-		c.JSON(500, gin.H{"error": "failed to update CR config: " + err.Error()})
-		return
-	}
-
-	c.JSON(200, gin.H{"id": id, "message": "RDB created successfully"})
+	c.JSON(200, gin.H{"id": id, "status": "loading"})
 }
 
-// ListRDBs lists all RDB resources for user
+// ListRDBs lists all RDB resources for user from database
 func (h *CombinatorHandler) ListRDBs(c *gin.Context) {
 	userUID := c.GetString("user_id")
 
-	combinator, err := controller.GetCombinatorAppConfig(k8s.DynamicClient, userUID)
+	resources, err := dblayer.ListCombinatorResources(userUID, "rdb")
 	if err != nil {
-		c.JSON(500, gin.H{"error": "failed to get combinator config: " + err.Error()})
+		c.JSON(500, gin.H{"error": "failed to list resources: " + err.Error()})
 		return
 	}
 
-	cfg, err := combinator.ParseConfig()
-	if err != nil {
-		c.JSON(500, gin.H{"error": "failed to parse config: " + err.Error()})
-		return
-	}
-
-	userRDB := k8s.UserRDB{UserUID: userUID}
-	dbSize, _ := userRDB.DatabaseSize()
-
-	type rdbWithSize struct {
-		ID   string `json:"id"`
-		Name string `json:"name"`
-		URL  string `json:"url"`
-		Size int64  `json:"size"`
-	}
-
-	items := make([]rdbWithSize, 0, len(cfg.RDBs))
-	for _, rdb := range cfg.RDBs {
-		size, _ := userRDB.SchemaSize(rdb.ID)
-		items = append(items, rdbWithSize{
-			ID:   rdb.ID,
-			Name: rdb.Name,
-			URL:  rdb.URL,
-			Size: size,
-		})
-	}
-
-	c.JSON(200, gin.H{"rdbs": items, "database_size": dbSize})
+	c.JSON(200, gin.H{"rdbs": resources})
 }
 
-// CreateKV creates a new KV resource
+// CreateKV creates a new KV resource record and submits async job
 func (h *CombinatorHandler) CreateKV(c *gin.Context) {
 	userUID := c.GetString("user_id")
 	var req struct {
@@ -100,124 +63,77 @@ func (h *CombinatorHandler) CreateKV(c *gin.Context) {
 		return
 	}
 
-	combinator, err := controller.GetCombinatorAppConfig(k8s.DynamicClient, userUID)
-	if err != nil {
-		c.JSON(500, gin.H{"error": "failed to get combinator config: " + err.Error()})
+	id := GenerateResourceUID()
+	resourceID := GenerateResourceUID()
+	if err := dblayer.CreateCombinatorResource(id, userUID, "kv", resourceID); err != nil {
+		c.JSON(500, gin.H{"error": "failed to create resource: " + err.Error()})
 		return
 	}
 
-	cfg, err := combinator.ParseConfig()
-	if err != nil {
-		c.JSON(500, gin.H{"error": "failed to parse config: " + err.Error()})
-		return
-	}
+	h.proc.Submit(NewCreateKVJob(id, userUID, resourceID, req.Type, req.URL))
 
-	newKV := controller.KVItem{
-		ID:   GenerateResourceUID(),
-		Type: req.Type,
-		URL:  req.URL,
-	}
-	cfg.KVs = append(cfg.KVs, newKV)
-
-	newConfig, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		c.JSON(500, gin.H{"error": "failed to marshal config: " + err.Error()})
-		return
-	}
-
-	if err := controller.UpdateCombinatorAppConfig(k8s.DynamicClient, userUID, string(newConfig)); err != nil {
-		c.JSON(200, gin.H{"id": newKV.ID, "error": "KV created but failed to update config, err: " + err.Error()})
-	} else {
-		c.JSON(200, gin.H{"id": newKV.ID, "message": "KV created successfully"})
-	}
+	c.JSON(200, gin.H{"id": id, "status": "loading"})
 }
 
-// ListKVs lists all KV resources for user
+// ListKVs lists all KV resources for user from database
 func (h *CombinatorHandler) ListKVs(c *gin.Context) {
 	userUID := c.GetString("user_id")
 
-	combinator, err := controller.GetCombinatorAppConfig(k8s.DynamicClient, userUID)
+	resources, err := dblayer.ListCombinatorResources(userUID, "kv")
 	if err != nil {
-		c.JSON(500, gin.H{"error": "failed to get combinator config: " + err.Error()})
+		c.JSON(500, gin.H{"error": "failed to list resources: " + err.Error()})
 		return
 	}
 
-	cfg, err := combinator.ParseConfig()
-	if err != nil {
-		c.JSON(500, gin.H{"error": "failed to parse config: " + err.Error()})
-		return
-	}
-
-	c.JSON(200, gin.H{"kvs": cfg.KVs})
+	c.JSON(200, gin.H{"kvs": resources})
 }
 
-// DeleteRDB deletes an RDB resource
+// DeleteRDB deletes an RDB resource record and submits async job
 func (h *CombinatorHandler) DeleteRDB(c *gin.Context) {
 	userUID := c.GetString("user_id")
-	rdbID := c.Param("id")
+	id := c.Param("id")
 
-	combinator, err := controller.GetCombinatorAppConfig(k8s.DynamicClient, userUID)
+	cr, err := dblayer.GetCombinatorResource(id)
 	if err != nil {
-		c.JSON(500, gin.H{"error": "failed to get combinator config: " + err.Error()})
+		c.JSON(404, gin.H{"error": "resource not found"})
+		return
+	}
+	if cr.UserUID != userUID {
+		c.JSON(403, gin.H{"error": "forbidden"})
 		return
 	}
 
-	newConfig, err := combinator.DeleteRDB(rdbID)
-	if err != nil {
-		c.JSON(500, gin.H{"error": "failed to delete RDB: " + err.Error()})
+	if err := dblayer.DeleteCombinatorResource(id); err != nil {
+		c.JSON(500, gin.H{"error": "failed to delete resource: " + err.Error()})
 		return
 	}
 
-	if err := controller.UpdateCombinatorAppConfig(k8s.DynamicClient, userUID, newConfig); err != nil {
-		c.JSON(500, gin.H{"error": "failed to update CR config: " + err.Error()})
-		return
-	}
+	h.proc.Submit(NewDeleteRDBJob(userUID, cr.ResourceID))
 
 	c.JSON(200, gin.H{"message": "deleted"})
 }
 
-// DeleteKV deletes a KV resource
+// DeleteKV deletes a KV resource record and submits async job
 func (h *CombinatorHandler) DeleteKV(c *gin.Context) {
 	userUID := c.GetString("user_id")
-	kvUID := c.Param("id")
+	id := c.Param("id")
 
-	combinator, err := controller.GetCombinatorAppConfig(k8s.DynamicClient, userUID)
+	cr, err := dblayer.GetCombinatorResource(id)
 	if err != nil {
-		c.JSON(500, gin.H{"error": "failed to get combinator config: " + err.Error()})
+		c.JSON(404, gin.H{"error": "resource not found"})
+		return
+	}
+	if cr.UserUID != userUID {
+		c.JSON(403, gin.H{"error": "forbidden"})
 		return
 	}
 
-	cfg, err := combinator.ParseConfig()
-	if err != nil {
-		c.JSON(500, gin.H{"error": "failed to parse config: " + err.Error()})
+	if err := dblayer.DeleteCombinatorResource(id); err != nil {
+		c.JSON(500, gin.H{"error": "failed to delete resource: " + err.Error()})
 		return
 	}
 
-	newKVs := []controller.KVItem{}
-	isExist := false
-	for _, kv := range cfg.KVs {
-		if kv.ID == kvUID {
-			isExist = true
-			continue
-		}
-		newKVs = append(newKVs, kv)
-	}
-	if !isExist {
-		c.JSON(404, gin.H{"error": "not found this KV: " + kvUID})
-		return
-	}
-	cfg.KVs = newKVs
-
-	newConfig, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		c.JSON(500, gin.H{"error": "failed to marshal config: " + err.Error()})
-		return
-	}
-
-	if err := controller.UpdateCombinatorAppConfig(k8s.DynamicClient, userUID, string(newConfig)); err != nil {
-		c.JSON(500, gin.H{"error": "failed to update combinator config: " + err.Error()})
-		return
-	}
+	h.proc.Submit(NewDeleteKVJob(userUID, cr.ResourceID))
 
 	c.JSON(200, gin.H{"message": "deleted"})
 }
