@@ -44,11 +44,23 @@ kubectl rollout restart deployment/control-plane -n console
 # 连接方式：
 kubectl exec -it cockroachdb-0 -n cockroachdb -- /cockroach/cockroach sql --insecure
 
+\dt: 查看当前 search_path 下的所有表（通常只有 public）。
+\dt *.*: 查看所有 Schema 下的所有表。
+\dt myschema.*: 查看指定 Schema 下的所有表。
+
 kubectl delete pod -l app=<label> -n console
 
 # Or delete by namespace
 kubectl delete namespace console
 kubectl delete namespace ingress
+
+curl -sfL https://get.k3s.io | K3S_URL=https://170.106.143.75:6443 K3S_TOKEN=K10e7a27b9b4ad38e3ec0ac9b1145cb4df685f5f93389ff658b68cc0bf53c082cf4::server:b84ea99f282152afe6056971db6789d6 INSTALL_K3S_EXEC="--node-external-ip=101.32.181.225 --node-label project=combinator-affinitive" sh -
+
+curl -sfL https://get.k3s.io | sh -s - server --flannel-backend=wireguard-native --node-external-ip=170.106.143.75 --tls-san=170.106.143.75
+
+/usr/local/bin/k3s-agent-uninstall.sh
+/usr/local/bin/k3s-uninstall.sh
+cat /var/lib/rancher/k3s/server/node-token
 ```
 
 ### Rollout and Restart Commands

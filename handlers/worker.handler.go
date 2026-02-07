@@ -196,25 +196,43 @@ func (h *WorkerHandler) GetWorkerEnv(c *gin.Context) {
 	c.JSON(200, envMap)
 }
 
-// SetWorkerEnv 设置 worker 环境变量
+// SetWorkerEnv 设置单条 worker 环境变量（merge 到现有 env）
 func (h *WorkerHandler) SetWorkerEnv(c *gin.Context) {
 	userUID := c.GetString("user_id")
 	workerID := c.Param("id")
 
-	var envMap map[string]string
-	if err := c.ShouldBindJSON(&envMap); err != nil {
+	var req struct {
+		Key    string `json:"key" binding:"required"`
+		Value  string `json:"value"`
+		Delete bool   `json:"delete"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
 
+	// 读取现有 env
+	envJSON, err := dblayer.GetWorkerEnvByOwner(workerID, userUID)
+	if err != nil {
+		c.JSON(404, gin.H{"error": "worker not found"})
+		return
+	}
+	var envMap map[string]string
+	json.Unmarshal([]byte(envJSON), &envMap)
+	if envMap == nil {
+		envMap = map[string]string{}
+	}
+
+	// merge
+	if req.Delete {
+		delete(envMap, req.Key)
+	} else {
+		envMap[req.Key] = req.Value
+	}
+
 	data, _ := json.Marshal(envMap)
-	// 单次操作：验证归属 + 更新 env_json
 	if err := dblayer.SetWorkerEnvByOwner(workerID, userUID, string(data)); err != nil {
-		if err == dblayer.ErrNotFound {
-			c.JSON(404, gin.H{"error": "worker not found"})
-		} else {
-			c.JSON(500, gin.H{"error": "failed to set env"})
-		}
+		c.JSON(500, gin.H{"error": "failed to set env"})
 		return
 	}
 
@@ -240,35 +258,63 @@ func (h *WorkerHandler) GetWorkerSecrets(c *gin.Context) {
 	c.JSON(200, secrets)
 }
 
-// SetWorkerSecrets 设置 worker secrets
-// 用户提交 {"KEY": "VALUE", ...}，key 名列表存数据库，完整 kv 写入 K8s Secret
+// SetWorkerSecrets 设置/删除单条 worker secret
 func (h *WorkerHandler) SetWorkerSecrets(c *gin.Context) {
 	userUID := c.GetString("user_id")
 	workerID := c.Param("id")
 
-	var secretMap map[string]string
-	if err := c.ShouldBindJSON(&secretMap); err != nil {
+	var req struct {
+		Key    string `json:"key" binding:"required"`
+		Value  string `json:"value"`
+		Delete bool   `json:"delete"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
 
-	keys := make([]string, 0, len(secretMap))
-	for k := range secretMap {
-		keys = append(keys, k)
+	// 读取现有 secrets key 列表
+	secretsJSON, err := dblayer.GetWorkerSecretsByOwner(workerID, userUID)
+	if err != nil {
+		c.JSON(404, gin.H{"error": "worker not found"})
+		return
 	}
-	keysData, _ := json.Marshal(keys)
+	var keys []string
+	json.Unmarshal([]byte(secretsJSON), &keys)
 
-	// 单次操作：验证归属 + 更新 secrets_json
-	if err := dblayer.SetWorkerSecretsByOwner(workerID, userUID, string(keysData)); err != nil {
-		if err == dblayer.ErrNotFound {
-			c.JSON(404, gin.H{"error": "worker not found"})
-		} else {
-			c.JSON(500, gin.H{"error": "failed to set secrets"})
+	if req.Delete {
+		// 删除 key
+		filtered := keys[:0]
+		for _, k := range keys {
+			if k != req.Key {
+				filtered = append(filtered, k)
+			}
 		}
+		keys = filtered
+	} else {
+		// 去重追加
+		found := false
+		for _, k := range keys {
+			if k == req.Key {
+				found = true
+				break
+			}
+		}
+		if !found {
+			keys = append(keys, req.Key)
+		}
+	}
+
+	keysData, _ := json.Marshal(keys)
+	if err := dblayer.SetWorkerSecretsByOwner(workerID, userUID, string(keysData)); err != nil {
+		c.JSON(500, gin.H{"error": "failed to set secrets"})
 		return
 	}
 
-	h.queue <- workerTask{kind: "sync_secret", workerID: workerID, userUID: userUID, data: secretMap}
+	h.queue <- workerTask{
+		kind: "sync_secret", workerID: workerID, userUID: userUID,
+		data: map[string]string{req.Key: req.Value},
+	}
 
 	c.JSON(200, keys)
 }

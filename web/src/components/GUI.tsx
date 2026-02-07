@@ -216,64 +216,134 @@ function WorkerPage() {
 }
 
 const btnClass = 'px-3 py-1 text-xs rounded border border-zinc-700 text-zinc-300 hover:bg-zinc-800'
-const textareaClass = 'w-full bg-zinc-900 border border-zinc-700 rounded p-2 text-sm font-mono text-zinc-200 focus:outline-none focus:border-zinc-500'
 
-function EnvSection({ env, envDraft, envEditing, envSaving, envToText, onEdit, onCancel, onDraftChange, onSave }: {
-  env: Record<string, string>; envDraft: string; envEditing: boolean; envSaving: boolean
-  envToText: (m: Record<string, string>) => string
-  onEdit: () => void; onCancel: () => void; onDraftChange: (v: string) => void; onSave: () => void
+function EnvSection({ env, onSet, onDelete }: {
+  env: Record<string, string>
+  onSet: (key: string, value: string) => Promise<void>
+  onDelete: (key: string) => Promise<void>
 }) {
+  const [newKey, setNewKey] = useState('')
+  const [newVal, setNewVal] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const handleAdd = async () => {
+    if (!newKey.trim()) return
+    setSaving(true)
+    await onSet(newKey.trim(), newVal)
+    setNewKey('')
+    setNewVal('')
+    setSaving(false)
+  }
+
+  const handleDelete = async (key: string) => {
+    setSaving(true)
+    await onDelete(key)
+    setSaving(false)
+  }
+
   const keys = Object.keys(env)
   return (
     <section>
-      <div className="flex items-center gap-2 mb-2">
-        <h3 className="text-sm font-semibold text-zinc-300">Environment Variables</h3>
-        {!envEditing && <button onClick={onEdit} className={btnClass}>Edit</button>}
-      </div>
-      {envEditing ? (
-        <div className="space-y-2">
-          <textarea rows={6} value={envDraft} onChange={e => onDraftChange(e.target.value)}
-            className={textareaClass} placeholder="KEY=VALUE (one per line)" />
-          <div className="flex gap-2">
-            <button onClick={onSave} disabled={envSaving} className={btnClass}>{envSaving ? 'Saving...' : 'Save'}</button>
-            <button onClick={onCancel} className={btnClass}>Cancel</button>
-          </div>
-        </div>
-      ) : keys.length > 0 ? (
-        <pre className="text-xs font-mono text-zinc-400 bg-zinc-900 rounded p-2">{envToText(env)}</pre>
+      <h3 className="text-sm font-semibold text-zinc-300 mb-2">Environment Variables</h3>
+      {keys.length > 0 ? (
+        <table className="w-full text-xs mb-2">
+          <thead>
+            <tr className="text-left text-zinc-500 border-b border-zinc-800">
+              <th className="pb-1 pr-3">Key</th>
+              <th className="pb-1 pr-3">Value</th>
+              <th className="pb-1 w-12"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {keys.map(k => (
+              <tr key={k} className="border-b border-zinc-800/50">
+                <td className="py-1 pr-3 font-mono text-zinc-300">{k}</td>
+                <td className="py-1 pr-3 font-mono text-zinc-400">{env[k]}</td>
+                <td className="py-1">
+                  <button onClick={() => handleDelete(k)} disabled={saving}
+                    className="text-red-400 hover:text-red-300 text-xs">Del</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       ) : (
-        <p className="text-xs text-zinc-500">(empty)</p>
+        <p className="text-xs text-zinc-500 mb-2">(empty)</p>
       )}
+      <div className="flex gap-2 items-center">
+        <input value={newKey} onChange={e => setNewKey(e.target.value)}
+          placeholder="KEY" className="bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs font-mono text-zinc-200 w-32" />
+        <input value={newVal} onChange={e => setNewVal(e.target.value)}
+          placeholder="VALUE" className="bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs font-mono text-zinc-200 flex-1" />
+        <button onClick={handleAdd} disabled={saving || !newKey.trim()} className={btnClass}>
+          {saving ? '...' : 'Add'}
+        </button>
+      </div>
     </section>
   )
 }
 
-function SecretSection({ secrets, secretDraft, secretEditing, secretSaving, onEdit, onCancel, onDraftChange, onSave }: {
-  secrets: string[]; secretDraft: string; secretEditing: boolean; secretSaving: boolean
-  onEdit: () => void; onCancel: () => void; onDraftChange: (v: string) => void; onSave: () => void
+function SecretSection({ secrets, onSet, onDelete }: {
+  secrets: string[]
+  onSet: (key: string, value: string) => Promise<void>
+  onDelete: (key: string) => Promise<void>
 }) {
+  const [newKey, setNewKey] = useState('')
+  const [newVal, setNewVal] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const handleAdd = async () => {
+    if (!newKey.trim() || !newVal) return
+    setSaving(true)
+    await onSet(newKey.trim(), newVal)
+    setNewKey('')
+    setNewVal('')
+    setSaving(false)
+  }
+
+  const handleDelete = async (key: string) => {
+    setSaving(true)
+    await onDelete(key)
+    setSaving(false)
+  }
+
   return (
     <section>
-      <div className="flex items-center gap-2 mb-2">
-        <h3 className="text-sm font-semibold text-zinc-300">Secrets</h3>
-        {!secretEditing && <button onClick={onEdit} className={btnClass}>Edit</button>}
-      </div>
-      {secretEditing ? (
-        <div className="space-y-2">
-          <textarea rows={6} value={secretDraft} onChange={e => onDraftChange(e.target.value)}
-            className={textareaClass} placeholder="KEY=VALUE (one per line, values only stored in cluster)" />
-          <div className="flex gap-2">
-            <button onClick={onSave} disabled={secretSaving} className={btnClass}>{secretSaving ? 'Saving...' : 'Save'}</button>
-            <button onClick={onCancel} className={btnClass}>Cancel</button>
-          </div>
-        </div>
-      ) : secrets.length > 0 ? (
-        <pre className="text-xs font-mono text-zinc-400 bg-zinc-900 rounded p-2">
-          {secrets.map(k => `${k}=********`).join('\n')}
-        </pre>
+      <h3 className="text-sm font-semibold text-zinc-300 mb-2">Secrets</h3>
+      {secrets.length > 0 ? (
+        <table className="w-full text-xs mb-2">
+          <thead>
+            <tr className="text-left text-zinc-500 border-b border-zinc-800">
+              <th className="pb-1 pr-3">Key</th>
+              <th className="pb-1 pr-3">Value</th>
+              <th className="pb-1 w-12"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {secrets.map(k => (
+              <tr key={k} className="border-b border-zinc-800/50">
+                <td className="py-1 pr-3 font-mono text-zinc-300">{k}</td>
+                <td className="py-1 pr-3 font-mono text-zinc-500">********</td>
+                <td className="py-1">
+                  <button onClick={() => handleDelete(k)} disabled={saving}
+                    className="text-red-400 hover:text-red-300 text-xs">Del</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       ) : (
-        <p className="text-xs text-zinc-500">(empty)</p>
+        <p className="text-xs text-zinc-500 mb-2">(empty)</p>
       )}
+      <div className="flex gap-2 items-center">
+        <input value={newKey} onChange={e => setNewKey(e.target.value)}
+          placeholder="KEY" className="bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs font-mono text-zinc-200 w-32" />
+        <input value={newVal} onChange={e => setNewVal(e.target.value)} type="password"
+          placeholder="VALUE" className="bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs font-mono text-zinc-200 flex-1" />
+        <button onClick={handleAdd} disabled={saving || !newKey.trim() || !newVal} className={btnClass}>
+          {saving ? '...' : 'Add'}
+        </button>
+      </div>
     </section>
   )
 }
@@ -322,16 +392,6 @@ function WorkerDetailPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
 
-  // env editing
-  const [envDraft, setEnvDraft] = useState('')
-  const [envEditing, setEnvEditing] = useState(false)
-  const [envSaving, setEnvSaving] = useState(false)
-
-  // secret editing
-  const [secretDraft, setSecretDraft] = useState('')
-  const [secretEditing, setSecretEditing] = useState(false)
-  const [secretSaving, setSecretSaving] = useState(false)
-
   const load = useCallback(async () => {
     if (!id) return
     try {
@@ -358,42 +418,39 @@ function WorkerDetailPage() {
   if (error) return <div className="text-red-400">{error}</div>
   if (!worker) return <div className="text-red-400">Worker not found</div>
 
-  const envToText = (m: Record<string, string>) => Object.entries(m).map(([k, v]) => `${k}=${v}`).join('\n')
-  const textToMap = (t: string): Record<string, string> => {
-    const m: Record<string, string> = {}
-    t.split('\n').forEach(line => {
-      const i = line.indexOf('=')
-      if (i > 0) m[line.slice(0, i).trim()] = line.slice(i + 1)
-    })
-    return m
-  }
-
-  const saveEnv = async () => {
-    setEnvSaving(true)
+  const envSet = async (key: string, value: string) => {
     try {
-      const result = await workerAPI.setEnv(id!, textToMap(envDraft))
+      const result = await workerAPI.setEnv(id!, key, value)
       setEnv(result)
-      setEnvEditing(false)
-      load()
     } catch (e) {
       setError((e as Error).message)
-    } finally {
-      setEnvSaving(false)
     }
   }
 
-  const saveSecrets = async () => {
-    setSecretSaving(true)
+  const envDelete = async (key: string) => {
     try {
-      const keys = await workerAPI.setSecrets(id!, textToMap(secretDraft))
-      setSecrets(keys)
-      setSecretEditing(false)
-      setSecretDraft('')
-      load()
+      const result = await workerAPI.setEnv(id!, key, '', true)
+      setEnv(result)
     } catch (e) {
       setError((e as Error).message)
-    } finally {
-      setSecretSaving(false)
+    }
+  }
+
+  const secretSet = async (key: string, value: string) => {
+    try {
+      const keys = await workerAPI.setSecrets(id!, key, value)
+      setSecrets(keys)
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
+  const secretDelete = async (key: string) => {
+    try {
+      const keys = await workerAPI.deleteSecret(id!, key)
+      setSecrets(keys)
+    } catch (e) {
+      setError((e as Error).message)
     }
   }
 
@@ -416,23 +473,10 @@ function WorkerDetailPage() {
       )}
 
       {/* Env Section */}
-      <EnvSection
-        env={env} envDraft={envDraft} envEditing={envEditing} envSaving={envSaving}
-        envToText={envToText}
-        onEdit={() => { setEnvDraft(envToText(env)); setEnvEditing(true) }}
-        onCancel={() => setEnvEditing(false)}
-        onDraftChange={setEnvDraft}
-        onSave={saveEnv}
-      />
+      <EnvSection env={env} onSet={envSet} onDelete={envDelete} />
 
       {/* Secrets Section */}
-      <SecretSection
-        secrets={secrets} secretDraft={secretDraft} secretEditing={secretEditing} secretSaving={secretSaving}
-        onEdit={() => { setSecretDraft(''); setSecretEditing(true) }}
-        onCancel={() => setSecretEditing(false)}
-        onDraftChange={setSecretDraft}
-        onSave={saveSecrets}
-      />
+      <SecretSection secrets={secrets} onSet={secretSet} onDelete={secretDelete} />
 
       {/* Versions */}
       <VersionsSection versions={versions} activeVersionId={worker.active_version_id} />

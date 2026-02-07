@@ -101,9 +101,9 @@ func main() {
 		api.DELETE("/worker/:id", wh.DeleteWorker)
 
 		api.GET("/worker/:id/env", wh.GetWorkerEnv)
-		api.PUT("/worker/:id/env", wh.SetWorkerEnv)
+		api.POST("/worker/:id/env", wh.SetWorkerEnv)
 		api.GET("/worker/:id/secret", wh.GetWorkerSecrets)
-		api.PUT("/worker/:id/secret", wh.SetWorkerSecrets)
+		api.POST("/worker/:id/secret", wh.SetWorkerSecrets)
 
 		api.GET("/domain", handlers.ListCustomDomains)
 		api.GET("/domain/:id", handlers.GetCustomDomain)

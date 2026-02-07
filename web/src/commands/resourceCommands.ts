@@ -231,27 +231,38 @@ async function workerEnv(terminal: TerminalAPI, id: string) {
 
 async function workerEnvSet(terminal: TerminalAPI, id: string) {
   try {
-    terminal.print('Enter env vars (KEY=VALUE), empty line to finish:', 'info');
-    const env: Record<string, string> = {};
-    while (true) {
-      const line = await terminal.waitForInput('');
-      if (!line) break;
-      const idx = line.indexOf('=');
-      if (idx <= 0) {
-        terminal.print('Invalid format, use KEY=VALUE', 'error');
-        continue;
-      }
-      env[line.slice(0, idx)] = line.slice(idx + 1);
-    }
-    if (Object.keys(env).length === 0) {
-      terminal.print('No env vars provided, cancelled', 'warning');
+    const line = await terminal.waitForInput('Enter KEY=VALUE:');
+    if (!line) {
+      terminal.print('Cancelled', 'warning');
       return;
     }
-    const result = await workerAPI.setEnv(id, env);
+    const idx = line.indexOf('=');
+    if (idx <= 0) {
+      terminal.print('Invalid format, use KEY=VALUE', 'error');
+      return;
+    }
+    const key = line.slice(0, idx).trim();
+    const value = line.slice(idx + 1);
+    const result = await workerAPI.setEnv(id, key, value);
     terminal.print('Env updated, syncing to cluster...', 'success');
     Object.keys(result).forEach(k => terminal.print(`  ${k}=${result[k]}`));
   } catch (error) {
     terminal.print(`Failed to set env: ${(error as Error).message}`, 'error');
+  }
+}
+
+async function workerEnvDelete(terminal: TerminalAPI, id: string, key: string) {
+  try {
+    const result = await workerAPI.setEnv(id, key, '', true);
+    terminal.print(`Env key "${key}" deleted, syncing to cluster...`, 'success');
+    const keys = Object.keys(result);
+    if (keys.length > 0) {
+      keys.forEach(k => terminal.print(`  ${k}=${result[k]}`));
+    } else {
+      terminal.print('  (empty)', 'warning');
+    }
+  } catch (error) {
+    terminal.print(`Failed to delete env: ${(error as Error).message}`, 'error');
   }
 }
 
@@ -271,57 +282,108 @@ async function workerSecret(terminal: TerminalAPI, id: string) {
   }
 }
 
+async function workerSecretDelete(terminal: TerminalAPI, id: string, key: string) {
+  try {
+    const keys = await workerAPI.deleteSecret(id, key);
+    terminal.print(`Secret key "${key}" deleted, syncing to cluster...`, 'success');
+    if (keys && keys.length > 0) {
+      keys.forEach((k: string) => terminal.print(`  ${k}=********`));
+    } else {
+      terminal.print('  (empty)', 'warning');
+    }
+  } catch (error) {
+    terminal.print(`Failed to delete secret: ${(error as Error).message}`, 'error');
+  }
+}
+
 async function workerSecretSet(terminal: TerminalAPI, id: string) {
   try {
-    terminal.print('Enter secrets (KEY=VALUE), empty line to finish:', 'info');
-    const secrets: Record<string, string> = {};
-    while (true) {
-      const line = await terminal.waitForInput('');
-      if (!line) break;
-      const idx = line.indexOf('=');
-      if (idx <= 0) {
-        terminal.print('Invalid format, use KEY=VALUE', 'error');
-        continue;
-      }
-      secrets[line.slice(0, idx)] = line.slice(idx + 1);
-    }
-    if (Object.keys(secrets).length === 0) {
-      terminal.print('No secrets provided, cancelled', 'warning');
+    const line = await terminal.waitForInput('Enter KEY=VALUE:');
+    if (!line) {
+      terminal.print('Cancelled', 'warning');
       return;
     }
-    const keys = await workerAPI.setSecrets(id, secrets);
-    terminal.print('Secrets updated, syncing to cluster...', 'success');
+    const idx = line.indexOf('=');
+    if (idx <= 0) {
+      terminal.print('Invalid format, use KEY=VALUE', 'error');
+      return;
+    }
+    const key = line.slice(0, idx).trim();
+    const value = line.slice(idx + 1);
+    const keys = await workerAPI.setSecrets(id, key, value);
+    terminal.print('Secret updated, syncing to cluster...', 'success');
     keys.forEach((k: string) => terminal.print(`  ${k}=********`));
   } catch (error) {
-    terminal.print(`Failed to set secrets: ${(error as Error).message}`, 'error');
+    terminal.print(`Failed to set secret: ${(error as Error).message}`, 'error');
   }
 }
 
 export async function workerCommand(terminal: TerminalAPI, args: string[]) {
   if (!requireAuth(terminal)) return;
-  switch (args[0]) {
-    case 'list': await workerList(terminal); break;
-    case 'add': await workerAdd(terminal); break;
+  const sub = args[0];
+  if (sub === 'list') { await workerList(terminal); return; }
+  if (sub === 'add') { await workerAdd(terminal); return; }
+
+  // worker <id> <action> ...
+  const id = sub;
+  if (!id) { printWorkerUsage(terminal); return; }
+  const action = args[1];
+
+  switch (action) {
+    case undefined:
     case 'get':
-      if (!args[1]) { terminal.print('Usage: worker get <id>', 'error'); return; }
-      await workerGet(terminal, args[1]); break;
+      await workerGet(terminal, id); break;
     case 'delete':
-      if (!args[1]) { terminal.print('Usage: worker delete <id>', 'error'); return; }
-      await workerDelete(terminal, args[1]); break;
+      await workerDelete(terminal, id); break;
     case 'env':
-      if (!args[1]) { terminal.print('Usage: worker env <id>', 'error'); return; }
-      await workerEnv(terminal, args[1]); break;
-    case 'env:set':
-      if (!args[1]) { terminal.print('Usage: worker env:set <id>', 'error'); return; }
-      await workerEnvSet(terminal, args[1]); break;
+      await handleWorkerEnv(terminal, id, args.slice(2)); break;
     case 'secret':
-      if (!args[1]) { terminal.print('Usage: worker secret <id>', 'error'); return; }
-      await workerSecret(terminal, args[1]); break;
-    case 'secret:set':
-      if (!args[1]) { terminal.print('Usage: worker secret:set <id>', 'error'); return; }
-      await workerSecretSet(terminal, args[1]); break;
-    default: terminal.print('Usage: worker [list|add|get|delete|env|env:set|secret|secret:set]', 'error');
+      await handleWorkerSecret(terminal, id, args.slice(2)); break;
+    default:
+      printWorkerUsage(terminal);
   }
+}
+
+async function handleWorkerEnv(terminal: TerminalAPI, id: string, rest: string[]) {
+  switch (rest[0]) {
+    case undefined:
+      await workerEnv(terminal, id); break;
+    case 'set':
+      await workerEnvSet(terminal, id); break;
+    case 'delete':
+      if (!rest[1]) { terminal.print('Usage: worker <id> env delete <key>', 'error'); return; }
+      await workerEnvDelete(terminal, id, rest[1]); break;
+    default:
+      terminal.print('Usage: worker <id> env [set|delete <key>]', 'error');
+  }
+}
+
+async function handleWorkerSecret(terminal: TerminalAPI, id: string, rest: string[]) {
+  switch (rest[0]) {
+    case undefined:
+      await workerSecret(terminal, id); break;
+    case 'set':
+      await workerSecretSet(terminal, id); break;
+    case 'delete':
+      if (!rest[1]) { terminal.print('Usage: worker <id> secret delete <key>', 'error'); return; }
+      await workerSecretDelete(terminal, id, rest[1]); break;
+    default:
+      terminal.print('Usage: worker <id> secret [set|delete <key>]', 'error');
+  }
+}
+
+function printWorkerUsage(terminal: TerminalAPI) {
+  terminal.print('Usage:', 'error');
+  terminal.print('  worker list                      - list workers', 'error');
+  terminal.print('  worker add                       - create worker', 'error');
+  terminal.print('  worker <id>                      - get worker details', 'error');
+  terminal.print('  worker <id> delete               - delete worker', 'error');
+  terminal.print('  worker <id> env                  - list env vars', 'error');
+  terminal.print('  worker <id> env set              - set env var', 'error');
+  terminal.print('  worker <id> env delete <key>     - delete env var', 'error');
+  terminal.print('  worker <id> secret               - list secrets', 'error');
+  terminal.print('  worker <id> secret set           - set secret', 'error');
+  terminal.print('  worker <id> secret delete <key>  - delete secret', 'error');
 }
 
 // === Domain Commands ===

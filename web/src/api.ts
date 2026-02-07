@@ -93,9 +93,10 @@ export const workerAPI = {
   create: (worker_name: string) => apiCall('/api/worker', 'POST', { worker_name }),
   delete: (id: string) => apiCall(`/api/worker/${id}`, 'DELETE'),
   getEnv: (id: string) => apiCall(`/api/worker/${id}/env`, 'GET'),
-  setEnv: (id: string, env: Record<string, string>) => apiCall(`/api/worker/${id}/env`, 'PUT', env),
+  setEnv: (id: string, key: string, value: string, del = false) => apiCall(`/api/worker/${id}/env`, 'POST', { key, value, delete: del }),
   getSecrets: (id: string) => apiCall(`/api/worker/${id}/secret`, 'GET'),
-  setSecrets: (id: string, secrets: Record<string, string>) => apiCall(`/api/worker/${id}/secret`, 'PUT', secrets),
+  setSecrets: (id: string, key: string, value: string) => apiCall(`/api/worker/${id}/secret`, 'POST', { key, value }),
+  deleteSecret: (id: string, key: string) => apiCall(`/api/worker/${id}/secret`, 'POST', { key, delete: true }),
 };
 
 export const domainAPI = {
