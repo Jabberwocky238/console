@@ -1,6 +1,7 @@
 package k8s
 
 import (
+	"container/list"
 	"database/sql"
 	"fmt"
 	"log"
@@ -10,52 +11,140 @@ import (
 	_ "github.com/lib/pq"
 )
 
-// RootRDBManager holds a persistent admin connection to CockroachDB
+// RootRDBManager holds persistent connections to CockroachDB
 type RootRDBManager struct {
-	mu  sync.Mutex
-	db  *sql.DB
-	dsn string
+	rootmu  sync.RWMutex
+	rootDB  *sql.DB
+	rootDSN string
+
+	userDBs map[string]*userDBEntry
+	lruList *list.List
 }
 
+type userDBEntry struct {
+	sync.RWMutex
+	db      *sql.DB
+	element *list.Element
+}
+
+func (e *userDBEntry) close() {
+	e.Lock()
+	defer e.Unlock()
+	if e.db != nil {
+		e.db.Close()
+		e.db = nil
+	}
+}
+
+var (
+	UserDBPoolSize = 64
+)
+
 func InitRDBManager() error {
-	RDBManager = &RootRDBManager{dsn: CockroachDBAdminDSN}
-	_, err := RDBManager.tryGetDB()
+	RDBManager = &RootRDBManager{
+		rootDSN: CockroachDBAdminDSN,
+		userDBs: make(map[string]*userDBEntry, UserDBPoolSize),
+		lruList: list.New(),
+	}
+	_, err := RDBManager.tryGetRootDB()
 	return err
 }
 
-// tryGetDB returns a healthy *sql.DB, reconnecting if needed (up to 3 attempts)
-func (m *RootRDBManager) tryGetDB() (*sql.DB, error) {
-	if m.db != nil {
-		if err := m.db.Ping(); err == nil {
-			return m.db, nil
+// tryGetRootDB returns a healthy root *sql.DB, reconnecting if needed (up to 3 attempts)
+func (m *RootRDBManager) tryGetRootDB() (*sql.DB, error) {
+	m.rootmu.Lock()
+	defer m.rootmu.Unlock()
+
+	if m.rootDB != nil {
+		if err := m.rootDB.Ping(); err == nil {
+			return m.rootDB, nil
 		}
-		log.Println("[rdb] existing connection lost, reconnecting...")
-		m.db.Close()
-		m.db = nil
+		log.Println("[rdb] root connection lost, reconnecting...")
+		m.rootDB.Close()
+		m.rootDB = nil
 	}
 	for i := 0; i < 3; i++ {
-		db, err := sql.Open("postgres", m.dsn)
+		db, err := sql.Open("postgres", m.rootDSN)
 		if err != nil {
 			return nil, fmt.Errorf("sql.Open failed: %w", err)
 		}
 		if err := db.Ping(); err != nil {
-			log.Printf("[rdb] ping attempt %d/3 failed: %v", i+1, err)
+			log.Printf("[rdb] root ping attempt %d/3 failed: %v", i+1, err)
 			db.Close()
 			continue
 		}
-		log.Printf("[rdb] reconnected on attempt %d/3", i+1)
-		m.db = db
+		log.Printf("[rdb] root reconnected on attempt %d/3", i+1)
+		m.rootDB = db
 		return db, nil
 	}
-	return nil, fmt.Errorf("cockroachdb unreachable after 3 attempts")
+	return nil, fmt.Errorf("cockroachdb root unreachable after 3 attempts")
+}
+
+// tryGetUserDB returns a healthy user *sql.DB from pool, reconnecting if needed
+func (m *RootRDBManager) tryGetUserDB(userUID string) (*sql.DB, *userRDB, error) {
+	// Build user DSN
+	userRDB := newUserRDB(userUID)
+
+	if entry, exists := m.userDBs[userUID]; exists {
+		entry.RLock()
+		defer entry.RUnlock()
+		if err := entry.db.Ping(); err == nil {
+			// Move to front (most recently used)
+			m.lruList.MoveToFront(entry.element)
+			return entry.db, userRDB, nil
+		}
+		log.Printf("[rdb] user %s connection lost, reconnecting...", userUID)
+		entry.close()
+	}
+
+	// Evict oldest connection if pool is full (LRU)
+	if len(m.userDBs) >= UserDBPoolSize {
+		oldest := m.lruList.Back()
+		if oldest != nil {
+			oldUID := oldest.Value.(string)
+			if entry, exists := m.userDBs[oldUID]; exists {
+				entry.close()
+				delete(m.userDBs, oldUID)
+			}
+			m.lruList.Remove(oldest)
+			log.Printf("[rdb] evicted LRU user connection: %s", oldUID)
+		}
+	}
+
+	// Try to connect
+	for i := 0; i < 3; i++ {
+		db, err := sql.Open("postgres", userRDB.dsn())
+		if err != nil {
+			return nil, nil, fmt.Errorf("sql.Open failed: %w", err)
+		}
+		if err := db.Ping(); err != nil {
+			log.Printf("[rdb] user %s ping attempt %d/3 failed: %v", userUID, i+1, err)
+			db.Close()
+			continue
+		}
+		log.Printf("[rdb] user %s connected on attempt %d/3", userUID, i+1)
+
+		// Add to LRU cache
+		element := m.lruList.PushFront(userUID)
+		m.userDBs[userUID] = &userDBEntry{
+			db:      db,
+			element: element,
+		}
+		return db, userRDB, nil
+	}
+	return nil, nil, fmt.Errorf("user db unreachable after 3 attempts")
 }
 
 // Close closes the persistent admin connection
 func (m *RootRDBManager) Close() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.db != nil {
-		return m.db.Close()
+	m.rootmu.Lock()
+	defer m.rootmu.Unlock()
+
+	if m.rootDB != nil {
+		return m.rootDB.Close()
+	}
+	for _, entry := range m.userDBs {
+		entry.close()
 	}
 	return nil
 }
@@ -84,6 +173,11 @@ func (r *userRDB) database() string {
 	return fmt.Sprintf("db_%s", sanitize(r.userUID))
 }
 
+func (r *userRDB) dsn() string {
+	return fmt.Sprintf("postgresql://%s@%s/%s?sslmode=disable",
+		r.username(), CockroachDBHost, r.database())
+}
+
 func (r *userRDB) dsnWithSchema(schemaID string) string {
 	schName := fmt.Sprintf("schema_%s", sanitize(schemaID))
 	return fmt.Sprintf("postgresql://%s@%s:%s/%s?sslmode=disable&search_path=%s",
@@ -106,14 +200,8 @@ func (m *RootRDBManager) useDB(userUID string) string {
 
 // CreateSchema creates a new schema in user's database
 func (m *RootRDBManager) CreateSchema(userUID, schemaID string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	db, err := m.tryGetDB()
+	db, r, err := m.tryGetUserDB(userUID)
 	if err != nil {
-		return err
-	}
-	r := newUserRDB(userUID)
-	if _, err := db.Exec(m.useDB(userUID)); err != nil {
 		return err
 	}
 	schName := fmt.Sprintf("schema_%s", sanitize(schemaID))
@@ -126,13 +214,8 @@ func (m *RootRDBManager) CreateSchema(userUID, schemaID string) error {
 
 // DeleteSchema deletes a schema from user's database
 func (m *RootRDBManager) DeleteSchema(userUID, schemaID string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	db, err := m.tryGetDB()
+	db, _, err := m.tryGetUserDB(userUID)
 	if err != nil {
-		return err
-	}
-	if _, err := db.Exec(m.useDB(userUID)); err != nil {
 		return err
 	}
 	schName := fmt.Sprintf("schema_%s", sanitize(schemaID))
@@ -142,13 +225,8 @@ func (m *RootRDBManager) DeleteSchema(userUID, schemaID string) error {
 
 // ListSchemas lists all schemas in user's database
 func (m *RootRDBManager) ListSchemas(userUID string) ([]string, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	db, err := m.tryGetDB()
+	db, _, err := m.tryGetUserDB(userUID)
 	if err != nil {
-		return nil, err
-	}
-	if _, err := db.Exec(m.useDB(userUID)); err != nil {
 		return nil, err
 	}
 	rows, err := db.Query(`SELECT schema_name FROM information_schema.schemata WHERE schema_name LIKE 'schema_%'`)
@@ -169,13 +247,8 @@ func (m *RootRDBManager) ListSchemas(userUID string) ([]string, error) {
 
 // SchemaExists checks if schema exists
 func (m *RootRDBManager) SchemaExists(userUID, schemaID string) (bool, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	db, err := m.tryGetDB()
+	db, _, err := m.tryGetUserDB(userUID)
 	if err != nil {
-		return false, err
-	}
-	if _, err := db.Exec(m.useDB(userUID)); err != nil {
 		return false, err
 	}
 	schName := fmt.Sprintf("schema_%s", sanitize(schemaID))
@@ -186,7 +259,9 @@ func (m *RootRDBManager) SchemaExists(userUID, schemaID string) (bool, error) {
 
 // InitUserRDB creates user and database for new user
 func (m *RootRDBManager) InitUserRDB(userUID string) error {
-	db, err := m.tryGetDB()
+	m.rootmu.Lock()
+	defer m.rootmu.Unlock()
+	db, err := m.tryGetRootDB()
 	if err != nil {
 		return err
 	}
@@ -203,7 +278,7 @@ func (m *RootRDBManager) InitUserRDB(userUID string) error {
 
 // DeleteUserRDB deletes user's database and user
 func (m *RootRDBManager) DeleteUserRDB(userUID string) error {
-	db, err := m.tryGetDB()
+	db, err := m.tryGetRootDB()
 	if err != nil {
 		return err
 	}
@@ -215,7 +290,7 @@ func (m *RootRDBManager) DeleteUserRDB(userUID string) error {
 
 // DropDatabase 直接按数据库名删除（用于清理孤儿）
 func (m *RootRDBManager) DropDatabase(dbName string) error {
-	db, err := m.tryGetDB()
+	db, err := m.tryGetRootDB()
 	if err != nil {
 		return err
 	}
@@ -223,9 +298,9 @@ func (m *RootRDBManager) DropDatabase(dbName string) error {
 	return err
 }
 
-// ListUserDatabases 列出 CockroachDB 中所有 db_ 前缀的数据库名
-func (m *RootRDBManager) ListUserDatabases() ([]string, error) {
-	db, err := m.tryGetDB()
+// RootListUserDatabases 列出 CockroachDB 中所有 db_ 前缀的数据库名
+func (m *RootRDBManager) RootListUserDatabases() ([]string, error) {
+	db, err := m.tryGetRootDB()
 	if err != nil {
 		return nil, err
 	}
@@ -246,41 +321,171 @@ func (m *RootRDBManager) ListUserDatabases() ([]string, error) {
 	return dbs, nil
 }
 
+const _DatabaseSizeSQL = `
+SELECT 
+    SUM((s."rowCount" * s."avgSize")::INT8) AS total_bytes
+FROM system.table_statistics AS s
+JOIN system.namespace AS n ON s."tableID" = n.id
+JOIN system.namespace AS db ON n."parentID" = db.id
+WHERE db.name = 'db_jabber147008'
+  AND s."createdAt" = (SELECT MAX("createdAt") FROM system.table_statistics WHERE "tableID" = s."tableID");
+`
+
+const DatabaseSizeSQL = `
+SELECT 
+    SUM((s."rowCount" * s."avgSize")::INT8) AS total_bytes
+FROM system.table_statistics AS s
+JOIN system.namespace AS n ON s."tableID" = n.id
+JOIN system.namespace AS db ON n."parentID" = db.id
+WHERE db.name = $1
+  AND s."createdAt" = (SELECT MAX("createdAt") FROM system.table_statistics WHERE "tableID" = s."tableID");
+`
+
 // DatabaseSize returns total size of user's database in bytes
 func (m *RootRDBManager) DatabaseSize(userUID string) (int64, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	db, err := m.tryGetDB()
+	m.rootmu.RLock()
+	defer m.rootmu.RUnlock()
+
+	db, err := m.tryGetRootDB()
 	if err != nil {
 		return 0, err
 	}
-	if _, err := db.Exec(m.useDB(userUID)); err != nil {
-		return 0, err
-	}
 	var size int64
-	err = db.QueryRow(
-		`SELECT COALESCE(SUM(total_bytes), 0)
-		 FROM crdb_internal.table_span_stats`).Scan(&size)
+	err = db.QueryRow(DatabaseSizeSQL, newUserRDB(userUID).database()).Scan(&size)
 	return size, err
+}
+
+const _AllTableInDatabaseSQL = `
+SELECT 
+    db.name AS db_name,
+	s."statisticID", 
+    s."columnIDs",
+    sc.name AS schema_name,
+    n.name AS table_name,
+    (s."rowCount" * s."avgSize")::INT8 AS table_bytes,
+    s."rowCount"::INT8 AS est_rows,
+    s."createdAt" AS last_updated
+FROM 
+    system.table_statistics AS s
+JOIN 
+    system.namespace AS n ON s."tableID" = n.id
+JOIN 
+    system.namespace AS sc ON n."parentSchemaID" = sc.id
+JOIN 
+    system.namespace AS db ON n."parentID" = db.id
+WHERE 
+    db.name = 'db_jabber147008'
+ORDER BY 
+    n.name ASC, last_updated DESC;
+`
+
+const _SchemaSizeSQL = `
+SELECT 
+    SUM((s."rowCount" * s."avgSize")::INT8) AS schema_bytes,
+    MAX(s."createdAt") AS last_updated
+FROM system.table_statistics AS s
+JOIN system.namespace AS n ON s."tableID" = n.id
+JOIN system.namespace AS sc ON n."parentSchemaID" = sc.id
+JOIN system.namespace AS db ON n."parentID" = db.id
+WHERE db.name = 'db_jabber147008' 
+  AND sc.name = 'schema_303737e93eb57281'
+  AND s."createdAt" = (SELECT MAX("createdAt") FROM system.table_statistics WHERE "tableID" = s."tableID");
+`
+
+const SchemaSizeSQL = `
+SELECT 
+    SUM((s."rowCount" * s."avgSize")::INT8) AS schema_bytes,
+    MAX(s."createdAt") AS last_updated
+FROM system.table_statistics AS s
+JOIN system.namespace AS n ON s."tableID" = n.id
+JOIN system.namespace AS sc ON n."parentSchemaID" = sc.id
+JOIN system.namespace AS db ON n."parentID" = db.id
+WHERE db.name = $1
+  AND sc.name = $2
+  AND s."createdAt" = (SELECT MAX("createdAt") FROM system.table_statistics WHERE "tableID" = s."tableID");
+`
+
+type schemaSizeResult struct {
+	TableName  string
+	TableID    int64
+	TotalBytes int64
+	EstRows    int64
 }
 
 // SchemaSize returns total size of a specific schema in bytes
 func (m *RootRDBManager) SchemaSize(userUID, schemaID string) (int64, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	db, err := m.tryGetDB()
+	m.rootmu.RLock()
+	defer m.rootmu.RUnlock()
+
+	db, err := m.tryGetRootDB()
 	if err != nil {
 		return 0, err
 	}
-	if _, err := db.Exec(m.useDB(userUID)); err != nil {
-		return 0, err
-	}
-	schName := fmt.Sprintf("schema_%s", sanitize(schemaID))
 	var size int64
-	err = db.QueryRow(
-		`SELECT COALESCE(SUM(s.total_bytes), 0)
-		 FROM crdb_internal.table_span_stats s
-		 JOIN crdb_internal.tables t ON t.table_id = s.table_id
-		 WHERE t.schema_name = $1`, schName).Scan(&size)
+	schName := fmt.Sprintf("schema_%s", sanitize(schemaID))
+	err = db.QueryRow(SchemaSizeSQL, newUserRDB(userUID).database(), schName).Scan(&size)
 	return size, err
+}
+
+const _ForceAnalyzeSQL = `
+SELECT 
+    sc.name AS schema_name,
+    n.name AS table_name
+FROM system.namespace AS n
+JOIN system.namespace AS sc ON n."parentSchemaID" = sc.id
+JOIN system.namespace AS db ON n."parentID" = db.id
+WHERE db.name = 'db_jabber147008'
+ORDER BY schema_name, table_name;
+`
+
+const ForceAnalyzeSQL = `
+SELECT 
+    sc.name AS schema_name,
+    n.name AS table_name
+FROM system.namespace AS n
+JOIN system.namespace AS sc ON n."parentSchemaID" = sc.id
+JOIN system.namespace AS db ON n."parentID" = db.id
+WHERE db.name = $1
+ORDER BY schema_name, table_name;
+`
+
+func (m *RootRDBManager) forceAnalyze(userUID string) error {
+	rootdb, err := m.tryGetRootDB()
+	if err != nil {
+		return err
+	}
+
+	var results []struct {
+		SchemaName string
+		TableName  string
+	}
+	// root只能查到表名，无法直接连接到用户数据库执行 ANALYZE，所以只能返回表列表让外部调用者逐个连接分析
+	rows, err := rootdb.Query(ForceAnalyzeSQL, newUserRDB(userUID).database())
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var r struct {
+			SchemaName string
+			TableName  string
+		}
+		if err := rows.Scan(&r.SchemaName, &r.TableName); err != nil {
+			return err
+		}
+		results = append(results, r)
+	}
+	userdb, rdb, err := m.tryGetUserDB(userUID)
+	if err != nil {
+		return err
+	}
+	for _, r := range results {
+		fullTableName := fmt.Sprintf("%s.%s.%s", rdb.database(), r.SchemaName, r.TableName)
+		log.Printf("[rdb] running ANALYZE on %s", fullTableName)
+		if _, err := userdb.Exec(fmt.Sprintf("ANALYZE %s", fullTableName)); err != nil {
+			log.Printf("[rdb] ANALYZE failed on %s: %v", fullTableName, err)
+			return err
+		}
+	}
+	return nil
 }

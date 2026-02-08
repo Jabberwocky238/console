@@ -56,7 +56,7 @@ func (j *UserAuditJob) Do() error {
 	// 3. 一次性拉取所有 db_ 数据库列表
 	var existingDBs []string
 	if k8s.RDBManager != nil {
-		existingDBs, err = k8s.RDBManager.ListUserDatabases()
+		existingDBs, err = k8s.RDBManager.RootListUserDatabases()
 		if err != nil {
 			log.Printf("[audit] list cockroachdb databases failed: %v", err)
 			existingDBs = nil

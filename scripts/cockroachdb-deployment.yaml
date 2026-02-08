@@ -161,20 +161,7 @@ spec:
 
           echo "Applying cluster optimizations..."
 
-          # 关闭 SQL 执行明细记录
-          /cockroach/cockroach sql --insecure --host=cockroachdb-0.cockroachdb.svc.cluster.local -e "SET CLUSTER SETTING sql.metrics.statement_details.enabled = false;"
-          /cockroach/cockroach sql --insecure --host=cockroachdb-0.cockroachdb.svc.cluster.local -e "SET CLUSTER SETTING sql.metrics.transaction_details.enabled = false;"
-
-          # 停止将统计信息刷入硬盘
-          /cockroach/cockroach sql --insecure --host=cockroachdb-0.cockroachdb.svc.cluster.local -e "SET CLUSTER SETTING sql.stats.flush.enabled = false;"
-
-          # 关闭自动收集表物理信息
-          /cockroach/cockroach sql --insecure --host=cockroachdb-0.cockroachdb.svc.cluster.local -e "SET CLUSTER SETTING sql.stats.automatic_collection.enabled = false;"
-
-          # 降低持久化行数上限
-          /cockroach/cockroach sql --insecure --host=cockroachdb-0.cockroachdb.svc.cluster.local -e "SET CLUSTER SETTING sql.stats.persisted_rows.max = 10000;"
-
-          # 缩短清理周期
-          /cockroach/cockroach sql --insecure --host=cockroachdb-0.cockroachdb.svc.cluster.local -e "SET CLUSTER SETTING sql.stats.cleanup.recurrence = '@every 10m';"
-
-          echo "Cluster optimizations applied successfully!"
+          # 关闭 SQL 执行明细记录，先不关防止日志过少导致监控报警，后续根据实际情况再调整
+          # /cockroach/cockroach sql --insecure --host=cockroachdb-0.cockroachdb.svc.cluster.local -e "SET CLUSTER SETTING sql.metrics.statement_details.enabled = false;"
+          # /cockroach/cockroach sql --insecure --host=cockroachdb-0.cockroachdb.svc.cluster.local -e "SET CLUSTER SETTING sql.metrics.transaction_details.enabled = false;"
+          # echo "Cluster optimizations applied successfully!"
