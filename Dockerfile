@@ -27,7 +27,7 @@ COPY --from=builder /app/control-plane .
 COPY --from=builder /app/scripts/init.sql ./scripts/
 COPY --from=frontend /app/web/dist ./dist/
 
-EXPOSE 9900, 9901
+EXPOSE 9900 9901
 
 ENTRYPOINT ["./control-plane"]
 CMD ["-l", "0.0.0.0:9900"]
