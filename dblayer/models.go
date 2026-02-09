@@ -42,7 +42,7 @@ type Worker struct {
 	Status          string    `json:"status"` // unloaded, loading, active, error
 	ActiveVersionID *int      `json:"active_version_id"`
 	EnvJSON         string    `json:"env_json"`     // JSON object: {"KEY": "VALUE", ...}
-	SecretsJSON     string    `json:"secrets_json"`  // JSON array: ["secret1", "secret2", ...]
+	SecretsJSON     string    `json:"secrets_json"` // JSON array: ["secret1", "secret2", ...]
 	CreatedAt       time.Time `json:"created_at"`
 }
 
@@ -66,4 +66,15 @@ type CombinatorResource struct {
 	Status       string    `json:"status"` // loading, error, active
 	Msg          string    `json:"msg"`
 	CreatedAt    time.Time `json:"created_at"`
+}
+
+// CombinatorResourceUsage model
+type CombinatorResourceReport struct {
+	ID            string    `json:"id"`
+	UserID        string    `json:"user_id" binding:"required"`
+	ResourceID    string    `json:"resource_id" binding:"required"`
+	ResourceType  string    `json:"resource_type" binding:"required"`
+	DataChange    int       `json:"datachange" binding:"required"`
+	TimespanStart time.Time `json:"timespan_start" binding:"required"`
+	TimespanEnd   time.Time `json:"timespan_end" binding:"required"`
 }

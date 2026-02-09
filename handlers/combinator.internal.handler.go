@@ -52,3 +52,26 @@ func (h *CombinatorInternalHandler) RetrieveSecretByID(c *gin.Context) {
 
 	c.JSON(200, gin.H{"resources": result, "secret_key": secretKey})
 }
+
+// ReportUsage handles batch usage reporting from combinators
+func (h *CombinatorInternalHandler) ReportUsage(c *gin.Context) {
+	var reports []dblayer.CombinatorResourceReport
+	if err := c.ShouldBindJSON(&reports); err != nil {
+		c.JSON(400, gin.H{"error": "invalid request body: " + err.Error()})
+		return
+	}
+
+	if len(reports) == 0 {
+		c.JSON(400, gin.H{"error": "empty reports array"})
+		return
+	}
+
+	// Batch insert all reports
+	err := dblayer.BatchSaveCombinatorResourceReports(reports)
+	if err != nil {
+		c.JSON(500, gin.H{"error": "failed to create reports: " + err.Error()})
+		return
+	}
+
+	c.JSON(200, gin.H{"message": "reports processed successfully", "count": len(reports)})
+}

@@ -1,6 +1,9 @@
 package dblayer
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // ========== User Actions ==========
 
@@ -264,4 +267,47 @@ func UpdateCombinatorResourceStatus(id, status, msg string) error {
 func DeleteCombinatorResource(id string) error {
 	_, err := DB.Exec(`DELETE FROM combinator_resources WHERE id = $1`, id)
 	return err
+}
+
+func SaveCombinatorResourceReport(report *CombinatorResourceReport) error {
+	_, err := DB.Exec(
+		`INSERT INTO combinator_resource_reports (
+		user_uid, resource_id, datachange, record_start, record_end)
+		 VALUES ($1, $2, $3, $4, $5)`,
+		report.UserID, report.ResourceID, report.DataChange,
+		report.TimespanStart, report.TimespanEnd,
+	)
+	return err
+}
+
+func BatchSaveCombinatorResourceReports(reports []CombinatorResourceReport) error {
+	if len(reports) == 0 {
+		return nil
+	}
+
+	// Build batch insert query
+	query := `INSERT INTO combinator_resource_reports (user_uid, resource_id, datachange, record_start, record_end) VALUES `
+	values := []interface{}{}
+
+	for i, report := range reports {
+		if i > 0 {
+			query += ", "
+		}
+		paramOffset := i * 5
+		query += fmt.Sprintf("($%d, $%d, $%d, $%d, $%d)", paramOffset+1, paramOffset+2, paramOffset+3, paramOffset+4, paramOffset+5)
+		values = append(values, report.UserID, report.ResourceID, report.DataChange, report.TimespanStart, report.TimespanEnd)
+	}
+
+	_, err := DB.Exec(query, values...)
+	return err
+}
+
+func CalculateDataChangeSum(userID, resourceType string, resourceID string) (int, error) {
+	var sum int
+	err := DB.QueryRow(
+		`SELECT COALESCE(SUM(datachange), 0) FROM combinator_resource_reports
+		 WHERE user_id = $1 AND resource_type = $2 AND resource_id = $3`,
+		userID, resourceType, resourceID,
+	).Scan(&sum)
+	return sum, err
 }

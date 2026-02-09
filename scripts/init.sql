@@ -74,6 +74,20 @@ CREATE TABLE IF NOT EXISTS combinator_resources (
 
 CREATE INDEX IF NOT EXISTS idx_combinator_resources_user_uid ON combinator_resources(user_uid);
 
+-- Combinator KV reports table
+CREATE TABLE IF NOT EXISTS combinator_resource_reports (
+    id SERIAL PRIMARY KEY,
+    user_uid VARCHAR(64) NOT NULL,
+    resource_id VARCHAR(64) NOT NULL REFERENCES combinator_resources(resource_id) ON DELETE CASCADE,
+    datachange INTEGER NOT NULL,
+    record_start TIMESTAMP NOT NULL,
+    record_end TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_combinator_resource_reports_user_uid ON combinator_resource_reports(user_uid);
+CREATE INDEX IF NOT EXISTS idx_combinator_resource_reports_resource_id ON combinator_resource_reports(resource_id);
+
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_verification_codes_email ON verification_codes(email);
 CREATE INDEX IF NOT EXISTS idx_custom_domains_user_uid ON custom_domains(user_uid);

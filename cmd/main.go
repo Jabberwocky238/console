@@ -78,8 +78,6 @@ func main() {
 	} else {
 		log.Println("K8s client initialized")
 		controller.EnsureCRD(k8s.RestConfig)
-		controller.EnsureCombinatorCRD(k8s.RestConfig)
-
 		stopCh := make(chan struct{})
 		app.Register(closerFunc(func() error {
 			log.Println("[shutdown] stopping controller")
