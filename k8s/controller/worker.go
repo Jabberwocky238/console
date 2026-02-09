@@ -18,6 +18,7 @@ import (
 type Worker struct {
 	WorkerID string `json:"worker_id"`
 	OwnerID  string `json:"owner_id"`
+	OwnerSK  string `json:"owner_sk"`
 	Image    string `json:"image"`
 	Port     int    `json:"port"`
 }
@@ -49,7 +50,7 @@ func (w *Worker) SecretName() string {
 }
 
 func (w *Worker) CombinatorEndpoint() string {
-	return fmt.Sprintf("http://combinator-%s.%s.svc.cluster.local:8899", w.OwnerID, k8s.CombinatorNamespace)
+	return fmt.Sprintf("http://combinator.%s.svc.cluster.local:8899", k8s.CombinatorNamespace)
 }
 func (w *Worker) EnsureDeployment(ctx context.Context) error {
 	if k8s.K8sClient == nil {
@@ -94,9 +95,11 @@ func (w *Worker) EnsureDeployment(ctx context.Context) error {
 							ContainerPort: int32(w.Port),
 						}},
 						Env: []corev1.EnvVar{
-						{Name: "COMBINATOR_API_ENDPOINT", Value: w.CombinatorEndpoint()},
-					},
-					EnvFrom: []corev1.EnvFromSource{
+							{Name: "COMBINATOR_API_ENDPOINT", Value: w.CombinatorEndpoint()},
+							{Name: "RAYSAIL_UID", Value: w.OwnerID},
+							{Name: "RAYSAIL_SECRET_KEY", Value: w.OwnerSK},
+						},
+						EnvFrom: []corev1.EnvFromSource{
 							{
 								ConfigMapRef: &corev1.ConfigMapEnvSource{
 									LocalObjectReference: corev1.LocalObjectReference{Name: w.EnvConfigMapName()},

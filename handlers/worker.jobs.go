@@ -37,7 +37,7 @@ func (j *DeployWorkerJob) ID() string {
 }
 
 func (j *DeployWorkerJob) Do() error {
-	v, w, err := dblayer.GetDeployVersionWithWorker(j.VersionID)
+	v, w, sk, err := dblayer.GetDeployVersionWithWorker(j.VersionID)
 	if err != nil {
 		dblayer.UpdateDeployVersionStatus(j.VersionID, "error", err.Error())
 		return fmt.Errorf("get version %d: %w", j.VersionID, err)
@@ -46,7 +46,7 @@ func (j *DeployWorkerJob) Do() error {
 	name := controller.WorkerName(w.WorkerID, w.UserUID)
 	err = controller.CreateWorkerAppCR(
 		k8s.DynamicClient, name,
-		w.WorkerID, w.UserUID, v.Image, v.Port,
+		w.WorkerID, w.UserUID, v.Image, sk, v.Port,
 	)
 	if err != nil {
 		dblayer.UpdateDeployVersionStatus(j.VersionID, "error", err.Error())

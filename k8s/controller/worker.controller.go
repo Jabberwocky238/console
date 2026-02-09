@@ -176,6 +176,7 @@ func workerFromUnstructured(u *unstructured.Unstructured) *Worker {
 	return &Worker{
 		WorkerID: fmt.Sprintf("%v", spec["workerID"]),
 		OwnerID:  fmt.Sprintf("%v", spec["ownerID"]),
+		OwnerSK:  fmt.Sprintf("%v", spec["ownerSK"]),
 		Image:    fmt.Sprintf("%v", spec["image"]),
 		Port:     int(port),
 	}
@@ -185,7 +186,7 @@ func workerFromUnstructured(u *unstructured.Unstructured) *Worker {
 
 func CreateWorkerAppCR(
 	client dynamic.Interface,
-	name, workerID, ownerID, image string,
+	name, workerID, ownerID, image string, ownerSK string,
 	port int,
 ) error {
 	cr := &unstructured.Unstructured{
@@ -199,6 +200,7 @@ func CreateWorkerAppCR(
 			"spec": map[string]interface{}{
 				"workerID": workerID,
 				"ownerID":  ownerID,
+				"ownerSK":  ownerSK,
 				"image":    image,
 				"port":     int64(port),
 			},

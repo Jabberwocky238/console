@@ -45,7 +45,8 @@ func (a *App) Shutdown() {
 }
 
 func main() {
-	listen := flag.String("l", "localhost:9900", "Listen address")
+	listen := flag.String("l", "localhost:9900", "External listen address")
+	internalListen := flag.String("i", "localhost:9901", "Internal listen address")
 	dbDSN := flag.String("d", "postgresql://myuser:your_password@localhost:5432/mydb?sslmode=disable", "Database DSN")
 	kubeconfig := flag.String("k", "", "Kubeconfig path (empty for in-cluster)")
 	flag.Parse()
@@ -97,6 +98,7 @@ func main() {
 	wh := handlers.NewWorkerHandler(proc)
 	ah := handlers.NewAuthHandler(proc)
 	ch := handlers.NewCombinatorHandler(proc)
+	cih := handlers.NewCombinatorInternalHandler(proc)
 
 	// 5. Cron
 	cron := k8s.NewCronScheduler(proc)
@@ -108,64 +110,63 @@ func main() {
 
 	log.Println("Control plane starting...")
 
-	// Setup Gin router
-	r := gin.Default()
+	// Setup External Gin router (public access)
+	externalRouter := gin.Default()
 	if os.Getenv("ENV") == "test" {
-		r.Use(crossOriginMiddleware())
+		externalRouter.Use(crossOriginMiddleware())
 	}
-	// Health check endpoint
-	r.GET("/health", handlers.Health)
 
 	// Serve frontend static files from dist/
-	r.Static("/assets", "./dist/assets")
-	r.GET("/", func(c *gin.Context) {
+	externalRouter.Static("/assets", "./dist/assets")
+	externalRouter.GET("/", func(c *gin.Context) {
 		c.File("./dist/index.html")
 	})
 
-	api := r.Group("/api")
+	externalAPI := externalRouter.Group("/api")
 	// Public routes
-	api.POST("/auth/register", ah.Register)
-	api.POST("/auth/login", handlers.Login)
-	api.POST("/auth/send-code", handlers.SendCode)
-	api.POST("/auth/reset-password", handlers.ResetPassword)
+	externalAPI.POST("/auth/register", ah.Register)
+	externalAPI.POST("/auth/login", handlers.Login)
+	externalAPI.POST("/auth/send-code", handlers.SendCode)
+	externalAPI.POST("/auth/reset-password", handlers.ResetPassword)
 
-	// Protected routes
-	api.Use(handlers.AuthMiddleware())
+	// Protected routes (auth required)
+	protected := externalAPI.Group("")
+	protected.Use(handlers.AuthMiddleware())
 	{
-		api.GET("/rdb", ch.ListRDBs)
-		api.GET("/rdb/:id", ch.GetRDB)
-		api.POST("/rdb", ch.CreateRDB)
-		api.DELETE("/rdb/:id", ch.DeleteRDB)
+		protected.GET("/rdb", ch.ListRDBs)
+		protected.GET("/rdb/:id", ch.GetRDB)
+		protected.POST("/rdb", ch.CreateRDB)
+		protected.DELETE("/rdb/:id", ch.DeleteRDB)
 
-		api.GET("/kv", ch.ListKVs)
-		api.POST("/kv", ch.CreateKV)
-		api.DELETE("/kv/:id", ch.DeleteKV)
+		protected.GET("/kv", ch.ListKVs)
+		protected.POST("/kv", ch.CreateKV)
+		protected.DELETE("/kv/:id", ch.DeleteKV)
 
-		api.GET("/worker", wh.ListWorkers)
-		api.GET("/worker/:id", wh.GetWorker)
-		api.POST("/worker", wh.CreateWorker)
-		api.DELETE("/worker/:id", wh.DeleteWorker)
+		protected.GET("/worker", wh.ListWorkers)
+		protected.GET("/worker/:id", wh.GetWorker)
+		protected.POST("/worker", wh.CreateWorker)
+		protected.DELETE("/worker/:id", wh.DeleteWorker)
 
-		api.GET("/worker/:id/env", wh.GetWorkerEnv)
-		api.POST("/worker/:id/env", wh.SetWorkerEnv)
-		api.GET("/worker/:id/secret", wh.GetWorkerSecrets)
-		api.POST("/worker/:id/secret", wh.SetWorkerSecrets)
+		protected.GET("/worker/:id/env", wh.GetWorkerEnv)
+		protected.POST("/worker/:id/env", wh.SetWorkerEnv)
+		protected.GET("/worker/:id/secret", wh.GetWorkerSecrets)
+		protected.POST("/worker/:id/secret", wh.SetWorkerSecrets)
 
-		api.GET("/domain", handlers.ListCustomDomains)
-		api.GET("/domain/:id", handlers.GetCustomDomain)
-		api.POST("/domain", handlers.AddCustomDomain)
-		api.DELETE("/domain/:id", handlers.DeleteCustomDomain)
+		protected.GET("/domain", handlers.ListCustomDomains)
+		protected.GET("/domain/:id", handlers.GetCustomDomain)
+		protected.POST("/domain", handlers.AddCustomDomain)
+		protected.DELETE("/domain/:id", handlers.DeleteCustomDomain)
 	}
 
 	// Sensitive routes (signature required)
-	sensitive := r.Group("/api")
+	sensitive := externalAPI.Group("")
 	sensitive.Use(handlers.SignatureMiddleware())
 	{
 		sensitive.POST("/worker/deploy", wh.DeployWorker)
 	}
 
 	// Fallback: serve static files from dist/ or index.html for SPA
-	r.NoRoute(func(c *gin.Context) {
+	externalRouter.NoRoute(func(c *gin.Context) {
 		filePath := path.Join("./dist", c.Request.URL.Path)
 		if _, err := os.Stat(filePath); err == nil {
 			c.File(filePath)
@@ -174,19 +175,46 @@ func main() {
 		c.File("./dist/index.html")
 	})
 
-	// 6. HTTP Server
-	srv := &http.Server{Addr: *listen, Handler: r}
+	// Setup Internal Gin router (internal services access)
+	internalRouter := gin.Default()
+	internalRouter.GET("/health", handlers.Health)
+
+	internalAPI := internalRouter.Group("/api")
+	{
+		// Internal routes (no auth required, only accessible from cluster)
+		internalAPI.POST("/worker/deploy", wh.DeployWorker)
+		internalAPI.GET("/combinator/retrieveSecretByID", cih.RetrieveSecretByID)
+	}
+
+	// 6. External HTTP Server
+	externalSrv := &http.Server{Addr: *listen, Handler: externalRouter}
 	app.Register(closerFunc(func() error {
-		log.Println("[shutdown] stopping http server")
+		log.Println("[shutdown] stopping external http server")
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		return srv.Shutdown(ctx)
+		return externalSrv.Shutdown(ctx)
+	}))
+
+	// 7. Internal HTTP Server
+	internalSrv := &http.Server{Addr: *internalListen, Handler: internalRouter}
+	app.Register(closerFunc(func() error {
+		log.Println("[shutdown] stopping internal http server")
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return internalSrv.Shutdown(ctx)
 	}))
 
 	go func() {
-		log.Printf("Server listening on %s", *listen)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("listen error: %v", err)
+		log.Printf("External server listening on %s", *listen)
+		if err := externalSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("external listen error: %v", err)
+		}
+	}()
+
+	go func() {
+		log.Printf("Internal server listening on %s", *internalListen)
+		if err := internalSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("internal listen error: %v", err)
 		}
 	}()
 

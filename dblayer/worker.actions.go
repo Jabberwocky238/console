@@ -186,23 +186,25 @@ func CreateDeployVersionForOwner(workerID, userUID, image string, port int) (int
 }
 
 // GetDeployVersionWithWorker 获取部署版本及其关联的 worker，两表 JOIN 单次查询
-func GetDeployVersionWithWorker(versionID int) (*WorkerDeployVersion, *Worker, error) {
+func GetDeployVersionWithWorker(versionID int) (*WorkerDeployVersion, *Worker, string, error) {
 	var v WorkerDeployVersion
 	var w Worker
+	var userSK string
 	err := DB.QueryRow(
-		`SELECT v.id, v.worker_id, v.image, v.port, v.status, v.msg, v.created_at,
+		`SELECT v.id, v.worker_id, v.image, v.port, v.status, v.msg, v.created_at, u.secret_key
 		        w.user_uid, w.worker_id, w.worker_name, w.status, w.active_version_id, w.env_json, w.secrets_json, w.created_at
 		 FROM worker_deploy_versions v
 		 JOIN workers w ON w.worker_id = v.worker_id
+		 JOIN users u ON u.uid = w.user_uid
 		 WHERE v.id = $1`, versionID,
 	).Scan(
-		&v.ID, &v.WorkerID, &v.Image, &v.Port, &v.Status, &v.Msg, &v.CreatedAt,
+		&v.ID, &v.WorkerID, &v.Image, &v.Port, &v.Status, &v.Msg, &v.CreatedAt, &userSK,
 		&w.UserUID, &w.WorkerID, &w.WorkerName, &w.Status, &w.ActiveVersionID, &w.EnvJSON, &w.SecretsJSON, &w.CreatedAt,
 	)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
-	return &v, &w, nil
+	return &v, &w, userSK, nil
 }
 
 // DeployVersionSuccess 部署成功：更新 version status + 设置 active_version_id，单次事务

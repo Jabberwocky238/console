@@ -228,6 +228,29 @@ func ListCombinatorResources(userUID, resourceType string) ([]*CombinatorResourc
 	return resources, nil
 }
 
+// ListActiveCombinatorResources 获取用户所有 active 状态的资源
+func ListActiveCombinatorResources(userUID string) ([]*CombinatorResource, error) {
+	rows, err := DB.Query(
+		`SELECT id, user_uid, resource_type, resource_id, status, msg, created_at
+		 FROM combinator_resources WHERE user_uid = $1 AND status = 'active'`,
+		userUID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var resources []*CombinatorResource
+	for rows.Next() {
+		var cr CombinatorResource
+		if err := rows.Scan(&cr.ID, &cr.UserUID, &cr.ResourceType, &cr.ResourceID, &cr.Status, &cr.Msg, &cr.CreatedAt); err != nil {
+			return nil, err
+		}
+		resources = append(resources, &cr)
+	}
+	return resources, nil
+}
+
 // UpdateCombinatorResourceStatus 更新资源状态
 func UpdateCombinatorResourceStatus(id, status, msg string) error {
 	_, err := DB.Exec(
