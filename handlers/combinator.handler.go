@@ -89,14 +89,6 @@ func (h *CombinatorHandler) GetRDB(c *gin.Context) {
 // CreateKV creates a new KV resource record and submits async job
 func (h *CombinatorHandler) CreateKV(c *gin.Context) {
 	userUID := c.GetString("user_id")
-	var req struct {
-		Type string `json:"kv_type" binding:"required"`
-		URL  string `json:"url" binding:"required"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
-		return
-	}
 
 	id := GenerateResourceUID()
 	resourceID := GenerateResourceUID()
@@ -105,7 +97,7 @@ func (h *CombinatorHandler) CreateKV(c *gin.Context) {
 		return
 	}
 
-	h.proc.Submit(NewCreateKVJob(id, userUID, resourceID, req.Type, req.URL))
+	h.proc.Submit(NewCreateKVJob(id, userUID, resourceID))
 
 	c.JSON(200, gin.H{"id": id, "status": "loading"})
 }

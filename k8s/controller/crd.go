@@ -82,97 +82,6 @@ func EnsureCRD(config *rest.Config) error {
 	return fmt.Errorf("CRD %s not established after 30s", crd.Name)
 }
 
-func EnsureCombinatorCRD(config *rest.Config) error {
-	client, err := apiextclient.NewForConfig(config)
-	if err != nil {
-		return err
-	}
-
-	crd := &apiextv1.CustomResourceDefinition{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: CombinatorResource + "." + Group,
-		},
-		Spec: apiextv1.CustomResourceDefinitionSpec{
-			Group: Group,
-			Names: apiextv1.CustomResourceDefinitionNames{
-				Plural:     CombinatorResource,
-				Singular:   "combinatorapp",
-				Kind:       CombinatorKind,
-				ShortNames: []string{"ca"},
-			},
-			Scope: apiextv1.NamespaceScoped,
-			Versions: []apiextv1.CustomResourceDefinitionVersion{
-				{
-					Name:    Version,
-					Served:  true,
-					Storage: true,
-					Schema: &apiextv1.CustomResourceValidation{
-						OpenAPIV3Schema: combinatorAppSchema(),
-					},
-					Subresources: &apiextv1.CustomResourceSubresources{
-						Status: &apiextv1.CustomResourceSubresourceStatus{},
-					},
-				},
-			},
-		},
-	}
-
-	ctx := context.Background()
-	crdClient := client.ApiextensionsV1().CustomResourceDefinitions()
-
-	_, err = crdClient.Get(ctx, crd.Name, metav1.GetOptions{})
-	if errors.IsNotFound(err) {
-		_, err = crdClient.Create(ctx, crd, metav1.CreateOptions{})
-		if err != nil {
-			return err
-		}
-		log.Printf("[controller] CRD %s created, waiting for it to be established", crd.Name)
-	} else if err != nil {
-		return fmt.Errorf("get CRD %s: %w", crd.Name, err)
-	} else {
-		log.Printf("[controller] CRD %s already exists", crd.Name)
-		return nil
-	}
-
-	for i := 0; i < 30; i++ {
-		time.Sleep(time.Second)
-		got, err := crdClient.Get(ctx, crd.Name, metav1.GetOptions{})
-		if err != nil {
-			continue
-		}
-		for _, c := range got.Status.Conditions {
-			if c.Type == apiextv1.Established && c.Status == apiextv1.ConditionTrue {
-				log.Printf("[controller] CRD %s established", crd.Name)
-				return nil
-			}
-		}
-	}
-	return fmt.Errorf("CRD %s not established after 30s", crd.Name)
-}
-
-func combinatorAppSchema() *apiextv1.JSONSchemaProps {
-	return &apiextv1.JSONSchemaProps{
-		Type: "object",
-		Properties: map[string]apiextv1.JSONSchemaProps{
-			"spec": {
-				Type:     "object",
-				Required: []string{"ownerID", "config"},
-				Properties: map[string]apiextv1.JSONSchemaProps{
-					"ownerID": {Type: "string"},
-					"config":  {Type: "string"},
-				},
-			},
-			"status": {
-				Type: "object",
-				Properties: map[string]apiextv1.JSONSchemaProps{
-					"phase":   {Type: "string"},
-					"message": {Type: "string"},
-				},
-			},
-		},
-	}
-}
-
 func workerAppSchema() *apiextv1.JSONSchemaProps {
 	return &apiextv1.JSONSchemaProps{
 		Type: "object",
@@ -186,6 +95,7 @@ func workerAppSchema() *apiextv1.JSONSchemaProps {
 				Properties: map[string]apiextv1.JSONSchemaProps{
 					"workerID": {Type: "string"},
 					"ownerID":  {Type: "string"},
+					"ownerSK":  {Type: "string"},
 					"image":    {Type: "string"},
 					"port":     {Type: "integer"},
 				},

@@ -6,7 +6,6 @@ import (
 
 	"jabberwocky238/console/dblayer"
 	"jabberwocky238/console/k8s"
-	"jabberwocky238/console/k8s/controller"
 )
 
 // --- CreateRDBJob ---
@@ -77,19 +76,16 @@ func (j *DeleteRDBJob) Do() error {
 // --- CreateKVJob ---
 
 type CreateKVJob struct {
-	RecordID   string
+	RecordID   string // combinator_resources.id
 	UserUID    string
 	ResourceID string
-	KVType     string
-	KVURL      string
 }
 
-func NewCreateKVJob(recordID, userUID, resourceID, kvType, kvURL string) *CreateKVJob {
+func NewCreateKVJob(recordID, userUID, resourceID string) *CreateKVJob {
 	return &CreateKVJob{
 		RecordID:   recordID,
 		UserUID:    userUID,
 		ResourceID: resourceID,
-		KVType:     kvType,
 	}
 }
 
@@ -117,7 +113,7 @@ func (j *DeleteKVJob) Type() string { return "combinator.delete_kv" }
 func (j *DeleteKVJob) ID() string   { return j.ResourceID }
 
 func (j *DeleteKVJob) Do() error {
-	
+
 	log.Printf("[combinator] KV %s deleted for user %s", j.ResourceID, j.UserUID)
 	return nil
 }

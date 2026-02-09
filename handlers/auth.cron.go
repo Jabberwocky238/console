@@ -63,15 +63,13 @@ func (j *UserAuditJob) Do() error {
 		}
 	}
 
-	// 4. 检查用户是否已初始化，未初始化则补建
-	checkUserInitialization(userSet, combinatorCRs)
+	// 4. 检查每个用户的 RDB 初始化状态，发现缺失则补建
 	if existingDBs != nil {
 		checkUserRDBInitialization(userSet, existingDBs)
 	}
 
 	// 5. 清理孤儿 CR（删 CR → controller onDelete 级联清理子资源）
 	cleanOrphanWorkers(userSet, workerCRs)
-	cleanOrphanCombinators(userSet, combinatorCRs)
 	if existingDBs != nil {
 		cleanOrphanRDBs(userSet, existingDBs)
 	}
@@ -98,31 +96,6 @@ func loadAllUserUIDs() (map[string]struct{}, error) {
 	return userSet, nil
 }
 
-// checkUserInitialization 检查每个用户是否有 CombinatorApp CR，没有则补建
-func checkUserInitialization(userSet map[string]struct{}, crList *unstructured.UnstructuredList) {
-	initialized := make(map[string]struct{})
-	for _, item := range crList.Items {
-		spec, _ := item.Object["spec"].(map[string]interface{})
-		if spec == nil {
-			continue
-		}
-		if ownerID, ok := spec["ownerID"].(string); ok {
-			initialized[ownerID] = struct{}{}
-		}
-	}
-
-	for uid := range userSet {
-		if _, ok := initialized[uid]; ok {
-			continue
-		}
-		log.Printf("[audit] user %s not initialized, creating CombinatorApp CR", uid)
-		config := controller.EmptyCombinatorConfig()
-		if err := controller.CreateCombinatorAppCR(k8s.DynamicClient, uid, config); err != nil {
-			log.Printf("[audit] create CombinatorApp CR for %s failed: %v", uid, err)
-		}
-	}
-}
-
 // cleanOrphanWorkers 删除 owner 不存在的 WorkerApp CR
 func cleanOrphanWorkers(userSet map[string]struct{}, crList *unstructured.UnstructuredList) {
 	for _, item := range crList.Items {
@@ -141,27 +114,6 @@ func cleanOrphanWorkers(userSet map[string]struct{}, crList *unstructured.Unstru
 		log.Printf("[audit] orphan worker CR %s (owner %s), deleting", name, ownerID)
 		if err := controller.DeleteWorkerAppCR(k8s.DynamicClient, name); err != nil {
 			log.Printf("[audit] delete worker CR %s failed: %v", name, err)
-		}
-	}
-}
-
-// cleanOrphanCombinators 删除 owner 不存在的 CombinatorApp CR
-func cleanOrphanCombinators(userSet map[string]struct{}, crList *unstructured.UnstructuredList) {
-	for _, item := range crList.Items {
-		spec, _ := item.Object["spec"].(map[string]interface{})
-		if spec == nil {
-			continue
-		}
-		ownerID, _ := spec["ownerID"].(string)
-		if ownerID == "" {
-			continue
-		}
-		if _, ok := userSet[ownerID]; ok {
-			continue
-		}
-		log.Printf("[audit] orphan combinator CR (owner %s), deleting", ownerID)
-		if err := controller.DeleteCombinatorAppCR(k8s.DynamicClient, ownerID); err != nil {
-			log.Printf("[audit] delete combinator CR for %s failed: %v", ownerID, err)
 		}
 	}
 }
