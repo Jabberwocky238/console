@@ -1,5 +1,5 @@
 # Combinator K3s Deployment
-# 无状态应用，5 个副本，尽可能分散部署
+# 无状态应用，5 个副本，尽可能与 CockroachDB 调度到同一节点
 
 ---
 apiVersion: v1
@@ -40,10 +40,10 @@ spec:
       labels:
         app: combinator
     spec:
-      # Pod 反亲和性配置 - 尽可能分散到不同节点
+      # Pod 亲和性配置 - 尽可能与 CockroachDB 调度到同一节点
       affinity:
-        podAntiAffinity:
-          # 优先级调度：尽量不在同一节点
+        podAffinity:
+          # 优先级调度：尽量与 CockroachDB 在同一节点
           preferredDuringSchedulingIgnoredDuringExecution:
             - weight: 100
               podAffinityTerm:
@@ -52,17 +52,22 @@ spec:
                     - key: app
                       operator: In
                       values:
+                        - cockroachdb
+                namespaces:
+                  - cockroachdb
+                topologyKey: kubernetes.io/hostname
+        podAntiAffinity:
+          # 同时避免 combinator pod 过度集中在同一节点
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 50
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
                         - combinator
                 topologyKey: kubernetes.io/hostname
-          # 如果需要强制分散（节点数>=5时），可以取消下面的注释
-          # requiredDuringSchedulingIgnoredDuringExecution:
-          #   - labelSelector:
-          #       matchExpressions:
-          #         - key: app
-          #           operator: In
-          #           values:
-          #             - combinator
-          #     topologyKey: kubernetes.io/hostname
       containers:
       - name: combinator
         image: ghcr.io/jabberwocky238/combinator:latest
@@ -83,11 +88,11 @@ spec:
           mountPath: /config
         resources:
           requests:
-            cpu: "100m"
+            cpu: "500m"
             memory: "128Mi"
           limits:
-            cpu: "500m"
-            memory: "512Mi"
+            cpu: "1m"
+            memory: "1024Mi"
         livenessProbe:
           httpGet:
             path: /health

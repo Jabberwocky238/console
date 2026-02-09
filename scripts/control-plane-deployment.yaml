@@ -115,11 +115,14 @@ metadata:
   name: control-plane
   namespace: console
 spec:
-  type: NodePort
+  type: ClusterIP
   ports:
-  - port: 9900
+  - name: external-api
+    port: 9900
     targetPort: 9900
-    nodePort: 30900
+  - name: internal-api
+    port: 9901
+    targetPort: 9901
   selector:
     app: control-plane
 
@@ -147,6 +150,7 @@ spec:
         imagePullPolicy: Always
         ports:
         - containerPort: 9900
+        - containerPort: 9901
         env:
         - name: JWT_SECRET
           valueFrom:
