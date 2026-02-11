@@ -1,4 +1,4 @@
-# Combinator K3s Deployment
+# Combinator K3s Deployment, 9988s
 # 无状态应用，5 个副本，尽可能与 CockroachDB 调度到同一节点
 
 ---
