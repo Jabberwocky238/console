@@ -205,6 +205,10 @@ spec:
         app: control-plane-outer
     spec:
       serviceAccountName: control-plane-sa
+      initContainers:
+      - name: wait-for-db-init
+        image: bitnami/kubectl:latest
+        command: ['kubectl', 'wait', '--for=condition=complete', '--timeout=300s', 'job/db-init', '-n', 'console']
       containers:
       - name: outer-gateway
         image: ghcr.io/jabberwocky238/console-outer:latest
@@ -237,13 +241,11 @@ spec:
           value: "${DOMAIN}"
         - name: RESEND_API_KEY
           value: "${RESEND_API_KEY}"
-        - name: DB_DSN
-          value: "host=postgres port=5432 user=postgres password=postgres dbname=combfather sslmode=disable"
         args:
         - "-l"
         - "0.0.0.0:9900"
         - "-d"
-        - "host=postgres port=5432 user=postgres password=postgres dbname=combfather sslmode=disable"
+        - "postgresql://postgres:postgres@postgres:5432/combfather?sslmode=disable"
 
 ---
 # Control Plane Inner Deployment
@@ -263,6 +265,10 @@ spec:
         app: control-plane-inner
     spec:
       serviceAccountName: control-plane-sa
+      initContainers:
+      - name: wait-for-db-init
+        image: bitnami/kubectl:latest
+        command: ['kubectl', 'wait', '--for=condition=complete', '--timeout=300s', 'job/db-init', '-n', 'console']
       containers:
       - name: inner-gateway
         image: ghcr.io/jabberwocky238/console-inner:latest
@@ -290,13 +296,11 @@ spec:
           value: "${DOMAIN}"
         - name: RESEND_API_KEY
           value: "${RESEND_API_KEY}"
-        - name: DB_DSN
-          value: "host=postgres port=5432 user=postgres password=postgres dbname=combfather sslmode=disable"
         args:
         - "-l"
         - "0.0.0.0:9901"
         - "-d"
-        - "host=postgres port=5432 user=postgres password=postgres dbname=combfather sslmode=disable"
+        - "postgresql://postgres:postgres@postgres:5432/combfather?sslmode=disable"
 ---
 # ServiceAccount for Control Plane
 apiVersion: v1

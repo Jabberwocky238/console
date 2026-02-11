@@ -187,11 +187,12 @@ func ListAllSuccessDomains() ([]*CustomDomain, error) {
 
 // CreateCombinatorResource 创建 combinator 资源记录
 func CreateCombinatorResource(userUID, resourceType, resourceID string) error {
+	var newID int
 	err := DB.QueryRow(
 		`INSERT INTO combinator_resources (user_uid, resource_type, resource_id)
 		 VALUES ($1, $2, $3) RETURNING id`,
 		userUID, resourceType, resourceID,
-	).Scan()
+	).Scan(&newID)
 	return err
 }
 
