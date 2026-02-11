@@ -30,13 +30,16 @@ func main() {
 	}
 
 	// 1. Database
+	log.Printf("try to connect to database: " + *dbDSN)
 	if err := dblayer.InitDB(*dbDSN); err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 		panic("Failed to connect to database:" + err.Error())
 	}
 	defer dblayer.DB.Close()
+	log.Printf("Database connected successfully")
 
 	// 2. CockroachDB
+	log.Printf("try to InitRDBManager")
 	if err := k8s.InitRDBManager(); err != nil {
 		log.Fatalf("CockroachDB init failed: %v", err)
 		panic("CockroachDB init failed: " + err.Error())
@@ -44,11 +47,12 @@ func main() {
 	defer k8s.RDBManager.Close()
 
 	// 3. K8s + Controller
+	log.Printf("try to InitK8s")
 	if err := k8s.InitK8s(*kubeconfig); err != nil {
 		log.Printf("Warning: K8s client init failed: %v", err)
 		panic("K8s client init failed: " + err.Error())
 	} else {
-		log.Println("K8s client initialized")
+		log.Println("K8s client initialized, EnsureCRD and start controller")
 		controller.EnsureCRD(k8s.RestConfig)
 		stopCh := make(chan struct{})
 		defer close(stopCh)
