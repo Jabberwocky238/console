@@ -75,9 +75,13 @@ func main() {
 	log.Println("Inner gateway starting...")
 
 	// Setup Internal Gin router (internal services access)
-	router := gin.Default()
+	router := gin.New()
+	router.Use(gin.Recovery())
 	router.GET("/health", handlers.HealthInner)
-
+	// 过滤 /health 请求的日志
+	router.Use(gin.LoggerWithConfig(gin.LoggerConfig{
+		SkipPaths: []string{"/health"},
+	}))
 	api := router.Group("/api")
 	{
 		// Internal routes (no auth required, only accessible from cluster)

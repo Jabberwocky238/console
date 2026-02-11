@@ -51,6 +51,10 @@ func main() {
 	// Setup External Gin router (public access)
 	router := gin.Default()
 	router.GET("/health", handlers.HealthOuter)
+	// 过滤 /health 请求的日志
+	router.Use(gin.LoggerWithConfig(gin.LoggerConfig{
+		SkipPaths: []string{"/health"},
+	}))
 	if debug {
 		router.Use(crossOriginMiddleware())
 	}
