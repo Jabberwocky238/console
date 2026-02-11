@@ -1,9 +1,11 @@
 package dblayer
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	_ "github.com/lib/pq"
 )
@@ -20,5 +22,14 @@ func InitDB(dsn string) error {
 		return fmt.Errorf("Connection err: %s", err.Error())
 	}
 
-	return DB.Ping()
+	// Set connection pool limits
+	DB.SetMaxOpenConns(25)
+	DB.SetMaxIdleConns(5)
+	DB.SetConnMaxLifetime(5 * time.Minute)
+
+	// Ping with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	return DB.PingContext(ctx)
 }
