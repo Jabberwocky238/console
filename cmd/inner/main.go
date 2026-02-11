@@ -41,10 +41,12 @@ func main() {
 	// 2. CockroachDB
 	log.Printf("try to InitRDBManager")
 	if err := k8s.InitRDBManager(); err != nil {
-		log.Fatalf("CockroachDB init failed: %v", err)
-		panic("CockroachDB init failed: " + err.Error())
+		log.Printf("Warning: CockroachDB init failed: %v", err)
+		log.Println("Inner gateway will continue without RDB support")
+	} else {
+		defer k8s.RDBManager.Close()
+		log.Println("CockroachDB initialized")
 	}
-	defer k8s.RDBManager.Close()
 
 	// 3. K8s + Controller
 	log.Printf("try to InitK8s")

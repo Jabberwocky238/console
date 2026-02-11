@@ -128,6 +128,12 @@ func (mgr *userDBManager) getOrCreateUserDB(userUID string) (*sql.DB, *userRDB, 
 		if err != nil {
 			return nil, nil, fmt.Errorf("sql.Open failed: %w", err)
 		}
+
+		// Configure connection pool
+		db.SetMaxOpenConns(10)
+		db.SetMaxIdleConns(2)
+		db.SetConnMaxLifetime(5 * time.Minute)
+
 		if err := db.Ping(); err != nil {
 			log.Printf("[rdb] user %s ping attempt %d/3 failed: %v", userUID, i+1, err)
 			db.Close()
@@ -206,6 +212,11 @@ func (m *RootRDBManager) tryGetRootDB() (*sql.DB, error) {
 		if err != nil {
 			return nil, fmt.Errorf("sql.Open failed: %w", err)
 		}
+
+		// Configure connection pool for root connection
+		db.SetMaxOpenConns(20)
+		db.SetMaxIdleConns(5)
+		db.SetConnMaxLifetime(10 * time.Minute)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		if err := db.PingContext(ctx); err != nil {
