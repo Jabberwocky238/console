@@ -167,13 +167,13 @@ func (wc *WorkerController) reconcile(u *unstructured.Unstructured) {
 
 // --- Helpers ---
 
-func workerFromUnstructured(u *unstructured.Unstructured) *Worker {
+func workerFromUnstructured(u *unstructured.Unstructured) *WorkerAppSpec {
 	spec, _ := u.Object["spec"].(map[string]interface{})
 	if spec == nil {
 		return nil
 	}
 	port, _ := spec["port"].(int64)
-	return &Worker{
+	return &WorkerAppSpec{
 		WorkerID: fmt.Sprintf("%v", spec["workerID"]),
 		OwnerID:  fmt.Sprintf("%v", spec["ownerID"]),
 		OwnerSK:  fmt.Sprintf("%v", spec["ownerSK"]),

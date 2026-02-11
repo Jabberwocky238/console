@@ -14,26 +14,17 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
-// Worker represents a worker deployment
-type Worker struct {
-	WorkerID string `json:"worker_id"`
-	OwnerID  string `json:"owner_id"`
-	OwnerSK  string `json:"owner_sk"`
-	Image    string `json:"image"`
-	Port     int    `json:"port"`
-}
-
 // WorkerName returns the canonical resource name for a worker.
 func WorkerName(workerID, ownerID string) string {
 	return fmt.Sprintf("w-%s-%s", workerID, ownerID)
 }
 
 // Name returns the worker's resource name
-func (w *Worker) Name() string {
+func (w *WorkerAppSpec) Name() string {
 	return WorkerName(w.WorkerID, w.OwnerID)
 }
 
-func (w *Worker) Labels() map[string]string {
+func (w *WorkerAppSpec) Labels() map[string]string {
 	return map[string]string{
 		"app":       w.Name(),
 		"worker-id": w.WorkerID,
@@ -41,18 +32,18 @@ func (w *Worker) Labels() map[string]string {
 	}
 }
 
-func (w *Worker) EnvConfigMapName() string {
+func (w *WorkerAppSpec) EnvConfigMapName() string {
 	return fmt.Sprintf("%s-env", w.Name())
 }
 
-func (w *Worker) SecretName() string {
+func (w *WorkerAppSpec) SecretName() string {
 	return fmt.Sprintf("%s-secret", w.Name())
 }
 
-func (w *Worker) CombinatorEndpoint() string {
+func (w *WorkerAppSpec) CombinatorEndpoint() string {
 	return fmt.Sprintf("http://combinator.%s.svc.cluster.local:8899", k8s.CombinatorNamespace)
 }
-func (w *Worker) EnsureDeployment(ctx context.Context) error {
+func (w *WorkerAppSpec) EnsureDeployment(ctx context.Context) error {
 	if k8s.K8sClient == nil {
 		return fmt.Errorf("k8s client not initialized")
 	}
@@ -128,7 +119,7 @@ func (w *Worker) EnsureDeployment(ctx context.Context) error {
 }
 
 // EnsureService checks and creates the Service if missing.
-func (w *Worker) EnsureService(ctx context.Context) error {
+func (w *WorkerAppSpec) EnsureService(ctx context.Context) error {
 	if k8s.K8sClient == nil {
 		return fmt.Errorf("k8s client not initialized")
 	}
@@ -157,7 +148,7 @@ func (w *Worker) EnsureService(ctx context.Context) error {
 }
 
 // EnsureConfigMap ensures the worker's env ConfigMap exists (empty if not present).
-func (w *Worker) EnsureConfigMap(ctx context.Context) error {
+func (w *WorkerAppSpec) EnsureConfigMap(ctx context.Context) error {
 	if k8s.K8sClient == nil {
 		return fmt.Errorf("k8s client not initialized")
 	}
@@ -178,7 +169,7 @@ func (w *Worker) EnsureConfigMap(ctx context.Context) error {
 }
 
 // EnsureSecret ensures the worker's Secret exists (empty if not present).
-func (w *Worker) EnsureSecret(ctx context.Context) error {
+func (w *WorkerAppSpec) EnsureSecret(ctx context.Context) error {
 	if k8s.K8sClient == nil {
 		return fmt.Errorf("k8s client not initialized")
 	}
@@ -200,7 +191,7 @@ func (w *Worker) EnsureSecret(ctx context.Context) error {
 }
 
 // EnsureIngressRoute checks and creates/updates the IngressRoute if missing.
-func (w *Worker) EnsureIngressRoute(ctx context.Context) error {
+func (w *WorkerAppSpec) EnsureIngressRoute(ctx context.Context) error {
 	if k8s.DynamicClient == nil {
 		return fmt.Errorf("dynamic client not initialized")
 	}
@@ -254,7 +245,7 @@ func (w *Worker) EnsureIngressRoute(ctx context.Context) error {
 }
 
 // DeleteAll deletes all sub-resources for this worker.
-func (w *Worker) DeleteAll(ctx context.Context) {
+func (w *WorkerAppSpec) DeleteAll(ctx context.Context) {
 	if k8s.K8sClient != nil {
 		k8s.K8sClient.AppsV1().Deployments(k8s.WorkerNamespace).Delete(ctx, w.Name(), metav1.DeleteOptions{})
 		k8s.K8sClient.CoreV1().Services(k8s.WorkerNamespace).Delete(ctx, w.Name(), metav1.DeleteOptions{})
@@ -267,7 +258,7 @@ func (w *Worker) DeleteAll(ctx context.Context) {
 }
 
 // ListWorkers lists all workers by querying Deployments with label selectors.
-func ListWorkers(workerId string, ownerId string) ([]Worker, error) {
+func ListWorkers(workerId string, ownerId string) ([]WorkerAppSpec, error) {
 	if k8s.K8sClient == nil {
 		return nil, fmt.Errorf("k8s client not initialized")
 	}
@@ -289,9 +280,9 @@ func ListWorkers(workerId string, ownerId string) ([]Worker, error) {
 		return nil, err
 	}
 
-	var workers []Worker
+	var workers []WorkerAppSpec
 	for _, d := range deployments.Items {
-		workers = append(workers, Worker{
+		workers = append(workers, WorkerAppSpec{
 			WorkerID: d.Labels["worker-id"],
 			OwnerID:  d.Labels["owner-id"],
 			Image:    d.Spec.Template.Spec.Containers[0].Image,

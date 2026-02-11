@@ -19,30 +19,15 @@ var WorkerAppGVR = schema.GroupVersionResource{
 	Resource: WorkerResource,
 }
 
-var CombinatorAppGVR = schema.GroupVersionResource{
-	Group:    Group,
-	Version:  Version,
-	Resource: CombinatorResource,
-}
-
 type WorkerAppSpec struct {
 	WorkerID string `json:"workerID"`
 	OwnerID  string `json:"ownerID"`
+	OwnerSK  string `json:"ownerSK"`
 	Image    string `json:"image"`
 	Port     int    `json:"port"`
 }
 
 type WorkerAppStatus struct {
-	Phase   string `json:"phase"`
-	Message string `json:"message"`
-}
-
-type CombinatorAppSpec struct {
-	OwnerID string `json:"ownerID"`
-	Config  string `json:"config"`
-}
-
-type CombinatorAppStatus struct {
 	Phase   string `json:"phase"`
 	Message string `json:"message"`
 }
