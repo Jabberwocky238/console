@@ -35,7 +35,7 @@ func (p *Processor) Submit(job Job) {
 }
 
 func (p *Processor) Start() {
-	for i := 0; i < p.PoolSize; i++ {
+	for range p.PoolSize {
 		go func() {
 			for job := range p.JobQueue {
 				if err := job.Do(); err != nil {

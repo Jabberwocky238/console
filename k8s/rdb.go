@@ -245,8 +245,8 @@ func (r *userRDB) database() string {
 }
 
 func (r *userRDB) dsn() string {
-	return fmt.Sprintf("postgresql://%s@%s/%s?sslmode=disable",
-		r.username(), CockroachDBHost, r.database())
+	return fmt.Sprintf("postgresql://%s@%s:%s/%s?sslmode=disable",
+		r.username(), CockroachDBHost, CockroachDBPort, r.database())
 }
 
 func (r *userRDB) dsnWithSchema(schemaID string) string {
