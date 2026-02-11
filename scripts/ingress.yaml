@@ -85,7 +85,7 @@ spec:
     - match: "Host(`console.${DOMAIN}`)"
       kind: Rule
       services:
-        - name: control-plane
+        - name: control-plane-outer
           namespace: console
           port: 9900
   tls:
