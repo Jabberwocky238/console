@@ -4,10 +4,11 @@ package dblayer
 
 // CreateWorker 创建 worker 记录
 func CreateWorker(wid, userUID, workerName string) error {
+	var id int
 	return DB.QueryRow(
 		`INSERT INTO workers (wid, user_uid, worker_name) VALUES ($1, $2, $3) RETURNING id`,
 		wid, userUID, workerName,
-	).Scan()
+	).Scan(&id)
 }
 
 // ListWorkersByUser 获取用户的所有 worker
