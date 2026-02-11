@@ -35,11 +35,15 @@ func main() {
 
 	// 3. Processor
 	proc := k8s.NewProcessor(256, 4)
+	cron := k8s.NewCronScheduler(proc)
 	proc.Start()
+	cron.Start()
 	defer proc.Close()
+	defer cron.Close()
 
 	wh := handlers.NewWorkerHandler(proc)
 	cih := handlers.NewCombinatorInternalHandler(proc)
+	th := handlers.NewTaskHandler(proc, cron)
 
 	log.Println("Inner gateway starting...")
 
@@ -53,6 +57,7 @@ func main() {
 		api.POST("/worker/deploy", wh.DeployWorker)
 		api.GET("/combinator/retrieveSecretByID", cih.RetrieveSecretByID)
 		api.POST("/combinator/reportUsage", cih.ReportUsage)
+		api.POST("/acceptTask", th.AcceptTask)
 	}
 
 	// HTTP Server

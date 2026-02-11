@@ -16,12 +16,16 @@ import (
 const userPageSize = 1000
 
 // UserAuditJob 定期审计：检查用户初始化状态 + 清理孤儿服务
-type UserAuditJob struct{}
+type userAuditJob struct{}
 
-func (j *UserAuditJob) Type() string { return "auth.user_audit" }
-func (j *UserAuditJob) ID() string   { return "periodic" }
+func NewUserAuditJob() *userAuditJob {
+	return &userAuditJob{}
+}
 
-func (j *UserAuditJob) Do() error {
+func (j *userAuditJob) Type() string { return "auth.user_audit" }
+func (j *userAuditJob) ID() string   { return "periodic" }
+
+func (j *userAuditJob) Do() error {
 	if k8s.K8sClient == nil || k8s.DynamicClient == nil {
 		log.Println("[audit] k8s client not initialized, skip")
 		return nil

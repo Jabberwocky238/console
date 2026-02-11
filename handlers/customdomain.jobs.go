@@ -7,12 +7,16 @@ import (
 	"jabberwocky238/console/dblayer"
 )
 
-type DomainCheckJob struct{}
+type domainCheckJob struct{}
 
-func (j *DomainCheckJob) Type() string { return "domain.check" }
-func (j *DomainCheckJob) ID() string   { return "periodic" }
+func NewDomainCheckJob() *domainCheckJob {
+	return &domainCheckJob{}
+}
 
-func (j *DomainCheckJob) Do() error {
+func (j *domainCheckJob) Type() string { return "domain.check" }
+func (j *domainCheckJob) ID() string   { return "periodic" }
+
+func (j *domainCheckJob) Do() error {
 	domains, err := dblayer.ListAllSuccessDomains()
 	if err != nil {
 		return err

@@ -1,4 +1,4 @@
-package handlers
+package jobs
 
 import (
 	"bytes"
@@ -77,24 +77,24 @@ func notifyAllCombinatorPods(userUID, resourceID, resourceType string) error {
 
 // --- CreateRDBJob ---
 
-type CreateRDBJob struct {
+type createRDBJob struct {
 	UserUID    string
 	Name       string
 	ResourceID string
 }
 
-func NewCreateRDBJob(userUID, name, resourceID string) *CreateRDBJob {
-	return &CreateRDBJob{
+func NewCreateRDBJob(userUID, name, resourceID string) *createRDBJob {
+	return &createRDBJob{
 		UserUID:    userUID,
 		Name:       name,
 		ResourceID: resourceID,
 	}
 }
 
-func (j *CreateRDBJob) Type() string { return "combinator.create_rdb" }
-func (j *CreateRDBJob) ID() string   { return j.Type() + fmt.Sprintf("%s_%s", j.UserUID, j.ResourceID) }
+func (j *createRDBJob) Type() string { return "combinator.create_rdb" }
+func (j *createRDBJob) ID() string   { return j.Type() + fmt.Sprintf("%s_%s", j.UserUID, j.ResourceID) }
 
-func (j *CreateRDBJob) Do() error {
+func (j *createRDBJob) Do() error {
 	if k8s.RDBManager == nil {
 		dblayer.UpdateCombinatorResourceStatus(j.UserUID, "rdb", j.ResourceID, "error", "cockroachdb not available")
 		return fmt.Errorf("cockroachdb not available")
@@ -115,19 +115,19 @@ func (j *CreateRDBJob) Do() error {
 
 // --- DeleteRDBJob ---
 
-type DeleteRDBJob struct {
+type deleteRDBJob struct {
 	UserUID    string
 	ResourceID string
 }
 
-func NewDeleteRDBJob(userUID, resourceID string) *DeleteRDBJob {
-	return &DeleteRDBJob{UserUID: userUID, ResourceID: resourceID}
+func NewDeleteRDBJob(userUID, resourceID string) *deleteRDBJob {
+	return &deleteRDBJob{UserUID: userUID, ResourceID: resourceID}
 }
 
-func (j *DeleteRDBJob) Type() string { return "combinator.delete_rdb" }
-func (j *DeleteRDBJob) ID() string   { return j.Type() + fmt.Sprintf("%s_%s", j.UserUID, j.ResourceID) }
+func (j *deleteRDBJob) Type() string { return "combinator.delete_rdb" }
+func (j *deleteRDBJob) ID() string   { return j.Type() + fmt.Sprintf("%s_%s", j.UserUID, j.ResourceID) }
 
-func (j *DeleteRDBJob) Do() error {
+func (j *deleteRDBJob) Do() error {
 	if k8s.RDBManager != nil {
 		if err := k8s.RDBManager.DeleteSchema(j.UserUID, j.ResourceID); err != nil {
 			log.Printf("[combinator] delete schema %s failed: %v", j.ResourceID, err)
@@ -145,22 +145,22 @@ func (j *DeleteRDBJob) Do() error {
 
 // --- CreateKVJob ---
 
-type CreateKVJob struct {
+type createKVJob struct {
 	UserUID    string
 	ResourceID string
 }
 
-func NewCreateKVJob(userUID, resourceID string) *CreateKVJob {
-	return &CreateKVJob{
+func NewCreateKVJob(userUID, resourceID string) *createKVJob {
+	return &createKVJob{
 		UserUID:    userUID,
 		ResourceID: resourceID,
 	}
 }
 
-func (j *CreateKVJob) Type() string { return "combinator.create_kv" }
-func (j *CreateKVJob) ID() string   { return j.Type() + fmt.Sprintf("%s_%s", j.UserUID, j.ResourceID) }
+func (j *createKVJob) Type() string { return "combinator.create_kv" }
+func (j *createKVJob) ID() string   { return j.Type() + fmt.Sprintf("%s_%s", j.UserUID, j.ResourceID) }
 
-func (j *CreateKVJob) Do() error {
+func (j *createKVJob) Do() error {
 	dblayer.UpdateCombinatorResourceStatus(j.UserUID, "kv", j.ResourceID, "active", "")
 	log.Printf("[combinator] KV %s created for user %s", j.ResourceID, j.UserUID)
 	return nil
@@ -168,19 +168,19 @@ func (j *CreateKVJob) Do() error {
 
 // --- DeleteKVJob ---
 
-type DeleteKVJob struct {
+type deleteKVJob struct {
 	UserUID    string
 	ResourceID string
 }
 
-func NewDeleteKVJob(userUID, resourceID string) *DeleteKVJob {
-	return &DeleteKVJob{UserUID: userUID, ResourceID: resourceID}
+func NewDeleteKVJob(userUID, resourceID string) *deleteKVJob {
+	return &deleteKVJob{UserUID: userUID, ResourceID: resourceID}
 }
 
-func (j *DeleteKVJob) Type() string { return "combinator.delete_kv" }
-func (j *DeleteKVJob) ID() string   { return j.Type() + fmt.Sprintf("%s_%s", j.UserUID, j.ResourceID) }
+func (j *deleteKVJob) Type() string { return "combinator.delete_kv" }
+func (j *deleteKVJob) ID() string   { return j.Type() + fmt.Sprintf("%s_%s", j.UserUID, j.ResourceID) }
 
-func (j *DeleteKVJob) Do() error {
+func (j *deleteKVJob) Do() error {
 	// 通知所有 combinator pod
 	if err := notifyAllCombinatorPods(j.UserUID, j.ResourceID, "kv"); err != nil {
 		log.Printf("[combinator] failed to notify pods about KV deletion: %v", err)

@@ -23,6 +23,9 @@ var (
 	CockroachDBPort     = "26257"
 	CockroachDBAdminDSN = "postgresql://root@cockroachdb-public.cockroachdb.svc.cluster.local:26257?sslmode=disable"
 
+	ControlPlaneInnerEndpoint = "http://control-plane-inner.console.svc.cluster.local:9900"
+	ControlPlaneOuterEndpoint = "http://control-plane-outer.console.svc.cluster.local:9901"
+
 	RDBManager *RootRDBManager
 )
 

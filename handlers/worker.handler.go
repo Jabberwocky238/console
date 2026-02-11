@@ -3,9 +3,11 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"strconv"
 
 	"jabberwocky238/console/dblayer"
+	"jabberwocky238/console/handlers/jobs"
 	"jabberwocky238/console/k8s"
 	"jabberwocky238/console/k8s/controller"
 
@@ -56,7 +58,9 @@ func (h *WorkerHandler) DeleteWorker(c *gin.Context) {
 	workerID := c.Param("id")
 
 	// 异步删 CR（可能不存在）
-	h.proc.Submit(&DeleteWorkerCRJob{WorkerID: workerID, UserUID: userUID})
+	if err := SendTask(jobs.NewDeleteWorkerCRJob(workerID, userUID)); err != nil {
+		log.Printf("Failed to send delete worker CR task: %v", err)
+	}
 
 	// 单次操作：验证归属 + 删除
 	if err := dblayer.DeleteWorkerByOwner(workerID, userUID); err != nil {
@@ -150,7 +154,10 @@ func (h *WorkerHandler) DeployWorker(c *gin.Context) {
 		return
 	}
 
-	h.proc.Submit(&DeployWorkerJob{VersionID: versionID, WorkerID: req.WorkerID, UserUID: req.UserUID})
+	if err := SendTask(jobs.NewDeployWorkerJob(req.WorkerID, req.UserUID, versionID)); err != nil {
+		c.JSON(500, gin.H{"error": "failed to enqueue deploy task"})
+		return
+	}
 
 	c.JSON(200, gin.H{
 		"worker_id":  req.WorkerID,
@@ -221,7 +228,10 @@ func (h *WorkerHandler) SetWorkerEnv(c *gin.Context) {
 		return
 	}
 
-	h.proc.Submit(&SyncEnvJob{WorkerID: workerID, UserUID: userUID, Data: envMap})
+	if err := SendTask(jobs.NewSyncEnvJob(workerID, userUID, envMap)); err != nil {
+		c.JSON(500, gin.H{"error": "failed to enqueue sync task"})
+		return
+	}
 
 	c.JSON(200, envMap)
 }
@@ -296,10 +306,10 @@ func (h *WorkerHandler) SetWorkerSecrets(c *gin.Context) {
 		return
 	}
 
-	h.proc.Submit(&SyncSecretJob{
-		WorkerID: workerID, UserUID: userUID,
-		Data: map[string]string{req.Key: req.Value},
-	})
+	if err := SendTask(jobs.NewSyncSecretJob(workerID, userUID, map[string]string{req.Key: req.Value})); err != nil {
+		c.JSON(500, gin.H{"error": "failed to enqueue sync task"})
+		return
+	}
 
 	c.JSON(200, keys)
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"jabberwocky238/console/dblayer"
+	"jabberwocky238/console/handlers/jobs"
 	"jabberwocky238/console/k8s"
 	"log"
 	"strings"
@@ -75,7 +76,11 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	// Enqueue userUID for post-registration setup
-	h.proc.Submit(&RegisterUserJob{UserUID: userUID})
+	if err := SendTask(jobs.NewRegisterUserJob(userUID)); err != nil {
+		log.Printf("Failed to send register user task: %v", err)
+		c.JSON(500, gin.H{"error": "failed to enqueue registration task"})
+		return
+	}
 
 	token, _ := GenerateToken(userUID, req.Email)
 	c.JSON(200, gin.H{

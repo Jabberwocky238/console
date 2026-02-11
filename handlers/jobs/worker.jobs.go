@@ -1,4 +1,4 @@
-package handlers
+package jobs
 
 import (
 	"context"
@@ -14,29 +14,29 @@ import (
 
 // --- Worker Job types (implement k8s.Job) ---
 
-type DeployWorkerJob struct {
+type deployWorkerJob struct {
 	WorkerID  string
 	UserUID   string
 	VersionID int
 }
 
-func NewDeployWorkerJob(workerID, userUID string, versionID int) *DeployWorkerJob {
-	return &DeployWorkerJob{
+func NewDeployWorkerJob(workerID, userUID string, versionID int) *deployWorkerJob {
+	return &deployWorkerJob{
 		WorkerID:  workerID,
 		UserUID:   userUID,
 		VersionID: versionID,
 	}
 }
 
-func (j *DeployWorkerJob) Type() string {
+func (j *deployWorkerJob) Type() string {
 	return "worker.deploy_worker"
 }
 
-func (j *DeployWorkerJob) ID() string {
+func (j *deployWorkerJob) ID() string {
 	return fmt.Sprintf("%s-%s-%d", j.WorkerID, j.UserUID, j.VersionID)
 }
 
-func (j *DeployWorkerJob) Do() error {
+func (j *deployWorkerJob) Do() error {
 	v, w, sk, err := dblayer.GetDeployVersionWithWorker(j.VersionID)
 	if err != nil {
 		dblayer.UpdateDeployVersionStatus(j.VersionID, "error", err.Error())
@@ -61,29 +61,29 @@ func (j *DeployWorkerJob) Do() error {
 	return nil
 }
 
-type SyncEnvJob struct {
+type syncEnvJob struct {
 	WorkerID string
 	UserUID  string
 	Data     map[string]string
 }
 
-func NewSyncEnvJob(workerID, userUID string, data map[string]string) *SyncEnvJob {
-	return &SyncEnvJob{
+func NewSyncEnvJob(workerID, userUID string, data map[string]string) *syncEnvJob {
+	return &syncEnvJob{
 		WorkerID: workerID,
 		UserUID:  userUID,
 		Data:     data,
 	}
 }
 
-func (j *SyncEnvJob) Type() string {
+func (j *syncEnvJob) Type() string {
 	return "worker.sync_env"
 }
 
-func (j *SyncEnvJob) ID() string {
+func (j *syncEnvJob) ID() string {
 	return j.WorkerID
 }
 
-func (j *SyncEnvJob) Do() error {
+func (j *syncEnvJob) Do() error {
 	if k8s.K8sClient == nil {
 		return nil
 	}
@@ -104,29 +104,29 @@ func (j *SyncEnvJob) Do() error {
 	return nil
 }
 
-type SyncSecretJob struct {
+type syncSecretJob struct {
 	WorkerID string
 	UserUID  string
 	Data     map[string]string
 }
 
-func NewSyncSecretJob(workerID, userUID string, data map[string]string) *SyncSecretJob {
-	return &SyncSecretJob{
+func NewSyncSecretJob(workerID, userUID string, data map[string]string) *syncSecretJob {
+	return &syncSecretJob{
 		WorkerID: workerID,
 		UserUID:  userUID,
 		Data:     data,
 	}
 }
 
-func (j *SyncSecretJob) Type() string {
+func (j *syncSecretJob) Type() string {
 	return "worker.sync_secret"
 }
 
-func (j *SyncSecretJob) ID() string {
+func (j *syncSecretJob) ID() string {
 	return j.WorkerID
 }
 
-func (j *SyncSecretJob) Do() error {
+func (j *syncSecretJob) Do() error {
 	if k8s.K8sClient == nil {
 		return nil
 	}
@@ -151,27 +151,27 @@ func (j *SyncSecretJob) Do() error {
 	return nil
 }
 
-type DeleteWorkerCRJob struct {
+type deleteWorkerCRJob struct {
 	WorkerID string
 	UserUID  string
 }
 
-func NewDeleteWorkerCRJob(workerID, userUID string) *DeleteWorkerCRJob {
-	return &DeleteWorkerCRJob{
+func NewDeleteWorkerCRJob(workerID, userUID string) *deleteWorkerCRJob {
+	return &deleteWorkerCRJob{
 		WorkerID: workerID,
 		UserUID:  userUID,
 	}
 }
 
-func (j *DeleteWorkerCRJob) Type() string {
+func (j *deleteWorkerCRJob) Type() string {
 	return "worker.delete_worker_cr"
 }
 
-func (j *DeleteWorkerCRJob) ID() string {
+func (j *deleteWorkerCRJob) ID() string {
 	return j.WorkerID
 }
 
-func (j *DeleteWorkerCRJob) Do() error {
+func (j *deleteWorkerCRJob) Do() error {
 	name := controller.WorkerName(j.WorkerID, j.UserUID)
 	return controller.DeleteWorkerAppCR(k8s.DynamicClient, name)
 }

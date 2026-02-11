@@ -64,9 +64,9 @@ func main() {
 
 	// 5. Cron
 	cron := k8s.NewCronScheduler(proc)
-	cron.RegisterJob(24*time.Hour, &handlers.UserAuditJob{})
-	cron.RegisterJob(12*time.Hour, &handlers.DomainCheckJob{})
-	proc.Submit(&handlers.UserAuditJob{})
+	cron.RegisterJob(24*time.Hour, handlers.NewUserAuditJob())
+	cron.RegisterJob(12*time.Hour, handlers.NewDomainCheckJob())
+	proc.Submit(handlers.NewUserAuditJob())
 	cron.Start()
 	defer cron.Close()
 

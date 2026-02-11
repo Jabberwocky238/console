@@ -4,17 +4,24 @@ import (
 	"time"
 )
 
+type TaskStatusType string
+
+const (
+	TaskStatusProcessing = "processing"
+	TaskStatusFinished   = "finished"
+)
+
 type ConsoleTask struct {
-	ID                  int       `json:"id"`
-	TaskType            string    `json:"task_type"`
-	TaskStatus          string    `json:"task_status"`
-	TaskDetailedStatus  string    `json:"task_detailed_status"`
-	TaskInfo            string    `json:"task_info"`
-	CreatedAt           time.Time `json:"created_at"`
+	ID                 int            `json:"id"`
+	TaskType           string         `json:"task_type"`
+	TaskStatus         TaskStatusType `json:"task_status"`
+	TaskDetailedStatus string         `json:"task_detailed_status"`
+	TaskInfo           string         `json:"task_info"`
+	CreatedAt          time.Time      `json:"created_at"`
 }
 
 // CreateTask creates a new console task
-func CreateTask(taskType, status, detailedStatus, taskInfo string) (*ConsoleTask, error) {
+func CreateTask(taskType, detailedStatus, taskInfo string, status TaskStatusType) (*ConsoleTask, error) {
 	query := `
 		INSERT INTO console_tasks (task_type, task_status, task_detailed_status, task_info)
 		VALUES ($1, $2, $3, $4)
@@ -39,7 +46,7 @@ func CreateTask(taskType, status, detailedStatus, taskInfo string) (*ConsoleTask
 }
 
 // UpdateTaskStatus updates the status and detailed status of a task
-func UpdateTaskStatus(taskID int, status, detailedStatus string) error {
+func UpdateTaskStatus(taskID int, status TaskStatusType, detailedStatus string) error {
 	query := `
 		UPDATE console_tasks
 		SET task_status = $1, task_detailed_status = $2

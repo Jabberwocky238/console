@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"jabberwocky238/console/dblayer"
+	"jabberwocky238/console/handlers/jobs"
 	"jabberwocky238/console/k8s"
 
 	"github.com/gin-gonic/gin"
@@ -32,7 +33,10 @@ func (h *CombinatorHandler) CreateRDB(c *gin.Context) {
 		return
 	}
 
-	h.proc.Submit(NewCreateRDBJob(userUID, req.Name, resourceID))
+	if err := SendTask(jobs.NewCreateRDBJob(userUID, req.Name, resourceID)); err != nil {
+		c.JSON(500, gin.H{"error": "failed to enqueue create task"})
+		return
+	}
 
 	c.JSON(200, gin.H{"id": resourceID, "status": "loading"})
 }
@@ -91,7 +95,10 @@ func (h *CombinatorHandler) CreateKV(c *gin.Context) {
 		return
 	}
 
-	h.proc.Submit(NewCreateKVJob(userUID, resourceID))
+	if err := SendTask(jobs.NewCreateKVJob(userUID, resourceID)); err != nil {
+		c.JSON(500, gin.H{"error": "failed to enqueue create task"})
+		return
+	}
 
 	c.JSON(200, gin.H{"id": resourceID, "status": "loading"})
 }
@@ -125,7 +132,10 @@ func (h *CombinatorHandler) DeleteRDB(c *gin.Context) {
 		return
 	}
 
-	h.proc.Submit(NewDeleteRDBJob(userUID, cr.ResourceID))
+	if err := SendTask(jobs.NewDeleteRDBJob(userUID, cr.ResourceID)); err != nil {
+		c.JSON(500, gin.H{"error": "failed to enqueue delete task"})
+		return
+	}
 
 	c.JSON(200, gin.H{"message": "deleted"})
 }
@@ -146,7 +156,10 @@ func (h *CombinatorHandler) DeleteKV(c *gin.Context) {
 		return
 	}
 
-	h.proc.Submit(NewDeleteKVJob(userUID, cr.ResourceID))
+	if err := SendTask(jobs.NewDeleteKVJob(userUID, cr.ResourceID)); err != nil {
+		c.JSON(500, gin.H{"error": "failed to enqueue delete task"})
+		return
+	}
 
 	c.JSON(200, gin.H{"message": "deleted"})
 }

@@ -1,4 +1,4 @@
-package handlers
+package jobs
 
 import (
 	"log"
@@ -8,19 +8,23 @@ import (
 
 // --- Auth Job types (implement k8s.Job) ---
 
-type RegisterUserJob struct {
+type registerUserJob struct {
 	UserUID string
 }
 
-func (j *RegisterUserJob) Type() string {
+func NewRegisterUserJob(userUID string) *registerUserJob {
+	return &registerUserJob{UserUID: userUID}
+}
+
+func (j *registerUserJob) Type() string {
 	return "auth.register_user"
 }
 
-func (j *RegisterUserJob) ID() string {
+func (j *registerUserJob) ID() string {
 	return j.UserUID
 }
 
-func (j *RegisterUserJob) Do() error {
+func (j *registerUserJob) Do() error {
 	if k8s.RDBManager != nil {
 		if err := k8s.RDBManager.InitUserRDB(j.UserUID); err != nil {
 			log.Printf("Warning: Failed to init RDB for user %s: %v", j.UserUID, err)
