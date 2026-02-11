@@ -24,6 +24,10 @@ func main() {
 	dbDSN := flag.String("d", "postgresql://myuser:your_password@localhost:5432/mydb?sslmode=disable", "Database DSN")
 	kubeconfig := flag.String("k", "", "Kubeconfig path (empty for in-cluster)")
 	flag.Parse()
+	debug := os.Getenv("ENV") == "test"
+	if !debug {
+		checkEnvInner()
+	}
 
 	// 1. Database
 	if err := dblayer.InitDB(*dbDSN); err != nil {
@@ -52,7 +56,7 @@ func main() {
 		go ctrl.Start(stopCh)
 	}
 
-	// 3. Processor
+	// 4. Processor and Cron
 	proc := k8s.NewProcessor(256, 4)
 	cron := k8s.NewCronScheduler(proc)
 	proc.Start()
@@ -99,4 +103,27 @@ func main() {
 	<-quit
 
 	srv.Shutdown(context.Background())
+}
+
+func checkEnvInner() {
+	var shouldPanic bool = false
+	requiredEnvs := []string{"DOMAIN"}
+	for _, env := range requiredEnvs {
+		thisVar := os.Getenv(env)
+		if thisVar == "" {
+			log.Printf("Environment variable %s is required but not set", env)
+			shouldPanic = true
+			continue
+		} else {
+			log.Printf("Environment variable %s is set", env)
+			switch env {
+			case "DOMAIN":
+				k8s.Domain = thisVar
+			}
+		}
+	}
+	if shouldPanic {
+		log.Fatalf("ENV not set, panic")
+		panic("One or more required environment variables are not set")
+	}
 }

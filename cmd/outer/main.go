@@ -23,7 +23,7 @@ func main() {
 
 	flag.Parse()
 	debug := os.Getenv("ENV") == "test"
-	if debug {
+	if !debug {
 		checkEnvOuter()
 	}
 

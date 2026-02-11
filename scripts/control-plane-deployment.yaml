@@ -286,6 +286,10 @@ spec:
           timeoutSeconds: 3
           failureThreshold: 3
         env:
+        - name: DOMAIN
+          value: "${DOMAIN}"
+        - name: RESEND_API_KEY
+          value: "${RESEND_API_KEY}"
         - name: DB_DSN
           value: "host=postgres port=5432 user=postgres password=postgres dbname=combfather sslmode=disable"
         args:
