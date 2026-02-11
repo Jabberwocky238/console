@@ -1,0 +1,186 @@
+package main
+
+import (
+	"context"
+	"flag"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"path"
+	"syscall"
+	"time"
+
+	"jabberwocky238/console/dblayer"
+	"jabberwocky238/console/handlers"
+	"jabberwocky238/console/k8s"
+	"jabberwocky238/console/k8s/controller"
+
+	"github.com/gin-gonic/gin"
+	"github.com/resend/resend-go/v3"
+)
+
+func main() {
+	listen := flag.String("l", "0.0.0.0:9900", "External listen address")
+	dbDSN := flag.String("d", "postgresql://myuser:your_password@localhost:5432/mydb?sslmode=disable", "Database DSN")
+	kubeconfig := flag.String("k", "", "Kubeconfig path (empty for in-cluster)")
+	flag.Parse()
+
+	if os.Getenv("ENV") != "test" {
+		checkEnv()
+	}
+
+	// 1. Database
+	if err := dblayer.InitDB(*dbDSN); err != nil {
+		log.Fatal("Failed to connect to database:", err)
+	}
+	defer dblayer.DB.Close()
+
+	// 2. CockroachDB
+	if err := k8s.InitRDBManager(); err != nil {
+		panic("CockroachDB init failed: " + err.Error())
+	}
+	defer k8s.RDBManager.Close()
+
+	// 3. K8s + Controller
+	if err := k8s.InitK8s(*kubeconfig); err != nil {
+		log.Printf("Warning: K8s client init failed: %v", err)
+	} else {
+		log.Println("K8s client initialized")
+		controller.EnsureCRD(k8s.RestConfig)
+		stopCh := make(chan struct{})
+		defer close(stopCh)
+		ctrl := controller.NewController(k8s.DynamicClient, k8s.K8sClient)
+		go ctrl.Start(stopCh)
+	}
+
+	// 4. Processor
+	proc := k8s.NewProcessor(256, 4)
+	proc.Start()
+	defer proc.Close()
+
+	wh := handlers.NewWorkerHandler(proc)
+	ah := handlers.NewAuthHandler(proc)
+	ch := handlers.NewCombinatorHandler(proc)
+
+	// 5. Cron
+	cron := k8s.NewCronScheduler(proc)
+	cron.RegisterJob(24*time.Hour, &handlers.UserAuditJob)
+	cron.RegisterJob(12*time.Hour, &handlers.DomainCheckJob{})
+	proc.Submit(&handlers.UserAuditJob{})
+	cron.Start()
+	defer cron.Close()
+
+	log.Println("Outer gateway starting...")
+
+	// Setup External Gin router (public access)
+	router := gin.Default()
+	if os.Getenv("ENV") == "test" {
+		router.Use(crossOriginMiddleware())
+	}
+
+	// Serve frontend static files from dist/
+	router.Static("/assets", "./dist/assets")
+	router.GET("/", func(c *gin.Context) {
+		c.File("./dist/index.html")
+	})
+
+	api := router.Group("/api")
+	// Public routes
+	api.POST("/auth/register", ah.Register)
+	api.POST("/auth/login", handlers.Login)
+	api.POST("/auth/send-code", handlers.SendCode)
+	api.POST("/auth/reset-password", handlers.ResetPassword)
+
+	// Protected routes (auth required)
+	protected := api.Group("")
+	protected.Use(handlers.AuthMiddleware())
+	{
+		protected.GET("/rdb", ch.ListRDBs)
+		protected.GET("/rdb/:id", ch.GetRDB)
+		protected.POST("/rdb", ch.CreateRDB)
+		protected.DELETE("/rdb/:id", ch.DeleteRDB)
+
+		protected.GET("/kv", ch.ListKVs)
+		protected.POST("/kv", ch.CreateKV)
+		protected.DELETE("/kv/:id", ch.DeleteKV)
+
+		protected.GET("/worker", wh.ListWorkers)
+		protected.GET("/worker/:id", wh.GetWorker)
+		protected.POST("/worker", wh.CreateWorker)
+		protected.DELETE("/worker/:id", wh.DeleteWorker)
+
+		protected.GET("/worker/:id/env", wh.GetWorkerEnv)
+		protected.POST("/worker/:id/env", wh.SetWorkerEnv)
+		protected.GET("/worker/:id/secret", wh.GetWorkerSecrets)
+		protected.POST("/worker/:id/secret", wh.SetWorkerSecrets)
+
+		protected.GET("/domain", handlers.ListCustomDomains)
+		protected.GET("/domain/:id", handlers.GetCustomDomain)
+		protected.POST("/domain", handlers.AddCustomDomain)
+		protected.DELETE("/domain/:id", handlers.DeleteCustomDomain)
+	}
+
+	// Sensitive routes (signature required)
+	sensitive := api.Group("")
+	sensitive.Use(handlers.SignatureMiddleware())
+	{
+		sensitive.POST("/worker/deploy", wh.DeployWorker)
+	}
+
+	// Fallback: serve static files from dist/ or index.html for SPA
+	router.NoRoute(func(c *gin.Context) {
+		filePath := path.Join("./dist", c.Request.URL.Path)
+		if _, err := os.Stat(filePath); err == nil {
+			c.File(filePath)
+			return
+		}
+		c.File("./dist/index.html")
+	})
+
+	// HTTP Server
+	srv := &http.Server{Addr: *listen, Handler: router}
+	go func() {
+		log.Printf("Outer gateway listening on %s", *listen)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("listen error: %v", err)
+		}
+	}()
+
+	// Wait for signal
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	srv.Shutdown(context.Background())
+}
+
+func checkEnv() {
+	domain := os.Getenv("DOMAIN")
+	if domain == "" {
+		panic("DOMAIN environment variable is required")
+	}
+	log.Printf("Using domain: %s", domain)
+	k8s.Domain = domain
+
+	resend_api_key := os.Getenv("RESEND_API_KEY")
+	if resend_api_key == "" {
+		panic("RESEND_API_KEY environment variable is required")
+	}
+	log.Print("RESEND_API_KEY is set")
+	handlers.RESEND_API_KEY = resend_api_key
+	handlers.ResendClient = resend.NewClient(resend_api_key)
+}
+
+func crossOriginMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization")
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+		c.Next()
+	}
+}
