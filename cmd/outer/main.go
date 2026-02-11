@@ -28,6 +28,7 @@ func main() {
 	}
 
 	// 1. Database
+	log.Printf("try to connect to database: " + *dbDSN)
 	if err := dblayer.InitDB(*dbDSN); err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 		panic("Failed to connect to database:" + err.Error())
@@ -35,6 +36,7 @@ func main() {
 	defer dblayer.DB.Close()
 
 	// 2. CockroachDB
+	log.Printf("try to connect to cockroachdb")
 	if err := k8s.InitRDBManager(); err != nil {
 		log.Fatalf("CockroachDB init failed: %v", err)
 		panic("CockroachDB init failed: " + err.Error())
