@@ -14,7 +14,7 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o outer-gateway ./cmd/outer
+RUN go build -o outer-gateway ./cmd/outer
 
 # Runtime stage
 FROM alpine:latest
