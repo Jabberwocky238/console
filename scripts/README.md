@@ -86,6 +86,29 @@ kubectl rollout undo deployment/control-plane -n console
 kubectl rollout history deployment/control-plane -n console
 ```
 
+# 1. 生成 TSIG 密钥
+  bash scripts/bind9-rfc2136-setup.sh
+
+  # 2. 设置环境变量
+  export TSIG_SECRET='生成的密钥'
+  export DOMAIN="example.com"
+  export WORKER_DOMAIN="workers.example.com"
+  export CN_IP="1.2.3.4"
+  export US_IP="5.6.7.8"
+  export DEFAULT_IP="9.10.11.12"
+  export CN_WORKER_IP="1.2.3.5"
+  export US_WORKER_IP="5.6.7.9"
+  export DEFAULT_WORKER_IP="9.10.11.13"
+
+  # 3. 部署 BIND9
+  envsubst < scripts/bind9-deployment.yaml | kubectl apply -f -
+
+  # 4. 获取 BIND9 的 Service IP
+  export BIND9_SERVER=$(kubectl get svc bind9 -n kube-system -o jsonpath='{.status.loadBalancer.ingress[0].ip}'):53
+
+  # 5. 部署 cert-manager RFC2136
+  envsubst < scripts/cert-manager-rfc2136.yaml | kubectl apply -f -
+
 ### Quick Debug Commands
 ```bash
 # View all resources

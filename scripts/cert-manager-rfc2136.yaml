@@ -1,0 +1,41 @@
+# ============================================
+# cert-manager RFC2136 配置（用于自建 BIND9 DNS）
+# ============================================
+# 前置步骤:
+# 1. 生成 TSIG 密钥:
+#    bash scripts/bind9-rfc2136-setup.sh
+# 2. 设置环境变量:
+#    export TSIG_SECRET=your_tsig_secret
+#    export BIND9_SERVER=your_bind9_ip:53
+# 3. 部署:
+#    envsubst < cert-manager-rfc2136.yaml | kubectl apply -f -
+# ============================================
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: rfc2136-secret
+  namespace: cert-manager
+type: Opaque
+stringData:
+  tsig-secret: ${TSIG_SECRET}
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-rfc2136
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: admin@${DOMAIN}
+    privateKeySecretRef:
+      name: letsencrypt-rfc2136-key
+    solvers:
+    - dns01:
+        rfc2136:
+          nameserver: ${BIND9_SERVER}
+          tsigKeyName: certmanager
+          tsigAlgorithm: HMACSHA256
+          tsigSecretSecretRef:
+            name: rfc2136-secret
+            key: tsig-secret

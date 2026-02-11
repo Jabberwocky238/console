@@ -71,7 +71,6 @@ spec:
     kind: ClusterIssuer
   dnsNames:
     - combinator.${DOMAIN}
-    - "*.s3.${DOMAIN}"
 ---
 # Console IngressRoute (跨 namespace 引用 console namespace 的 control-plane service)
 apiVersion: traefik.io/v1alpha1

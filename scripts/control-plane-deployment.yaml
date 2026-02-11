@@ -108,49 +108,77 @@ stringData:
   jwt-secret: "change-me-in-production"
 
 ---
-# Control Plane Service
+# Control Plane Outer Service (External API)
 apiVersion: v1
 kind: Service
 metadata:
-  name: control-plane
+  name: control-plane-outer
   namespace: console
 spec:
   type: ClusterIP
   ports:
-  - name: external-api
+  - name: http
     port: 9900
     targetPort: 9900
-  - name: internal-api
+  selector:
+    app: control-plane-outer
+
+---
+# Control Plane Inner Service (Internal API)
+apiVersion: v1
+kind: Service
+metadata:
+  name: control-plane-inner
+  namespace: console
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
     port: 9901
     targetPort: 9901
   selector:
-    app: control-plane
+    app: control-plane-inner
 
 ---
-# Control Plane Deployment
+# Control Plane Outer Deployment
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: control-plane
+  name: control-plane-outer
   namespace: console
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: control-plane
+      app: control-plane-outer
   template:
     metadata:
       labels:
-        app: control-plane
+        app: control-plane-outer
     spec:
       serviceAccountName: control-plane-sa
       containers:
-      - name: control-plane
-        image: ghcr.io/jabberwocky238/console:latest
+      - name: outer-gateway
+        image: ghcr.io/jabberwocky238/console-outer:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 9900
-        - containerPort: 9901
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 9900
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 9900
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
         env:
         - name: JWT_SECRET
           valueFrom:
@@ -161,9 +189,60 @@ spec:
           value: "${DOMAIN}"
         - name: RESEND_API_KEY
           value: "${RESEND_API_KEY}"
+        - name: DB_DSN
+          value: "host=postgres port=5432 user=postgres password=postgres dbname=combfather sslmode=disable"
         args:
         - "-l"
         - "0.0.0.0:9900"
+        - "-d"
+        - "host=postgres port=5432 user=postgres password=postgres dbname=combfather sslmode=disable"
+
+---
+# Control Plane Inner Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: control-plane-inner
+  namespace: console
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: control-plane-inner
+  template:
+    metadata:
+      labels:
+        app: control-plane-inner
+    spec:
+      serviceAccountName: control-plane-sa
+      containers:
+      - name: inner-gateway
+        image: ghcr.io/jabberwocky238/console-inner:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 9901
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 9901
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 9901
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        env:
+        - name: DB_DSN
+          value: "host=postgres port=5432 user=postgres password=postgres dbname=combfather sslmode=disable"
+        args:
+        - "-l"
+        - "0.0.0.0:9901"
         - "-d"
         - "host=postgres port=5432 user=postgres password=postgres dbname=combfather sslmode=disable"
 ---
