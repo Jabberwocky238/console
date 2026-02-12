@@ -1,0 +1,329 @@
+---
+# Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: powerdns-system
+
+---
+# ConfigMap for PowerDNS configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: powerdns-config
+  namespace: powerdns-system
+data:
+  pdns.conf: |
+    launch=pipe
+    pipe-command=/usr/local/bin/geoip-backend.sh
+    local-address=0.0.0.0
+    local-port=53
+    log-dns-queries=yes
+    loglevel=6
+    webserver=yes
+    webserver-address=0.0.0.0
+    webserver-port=8081
+    webserver-allow-from=0.0.0.0/0
+    api=yes
+    api-key=changeme-api-key
+
+  geoip-backend.sh: |
+    #!/bin/bash
+    # PowerDNS Pipe Backend with GeoIP support
+
+    GEOIP_DB="/geoip/GeoLite2-Country.mmdb"
+
+    # 香港IP
+    HK_IP="101.32.181.225"
+    # 美国IP
+    US_IP="170.106.143.75"
+    # 马来西亚IP
+    MY_IP="170.106.143.75"
+    # 默认IP（其他地区）
+    DEFAULT_IP="163.245.215.17"
+
+    handshake() {
+      read -r HELLO
+      if [ "$HELLO" = "HELO\t1" ] || [ "$HELLO" = "HELO	1" ]; then
+        echo "OK	PowerDNS GeoIP Backend"
+      fi
+    }
+
+    get_country_from_ip() {
+      local ip=$1
+      if [ -f "$GEOIP_DB" ]; then
+        country=$(mmdblookup --file "$GEOIP_DB" --ip "$ip" country iso_code 2>/dev/null | grep -oP '"\K[^"]+' | head -1)
+        echo "$country"
+      else
+        echo "US"
+      fi
+    }
+
+    query() {
+      local qname=$1
+      local qclass=$2
+      local qtype=$3
+      local id=$4
+      local remote_ip=$5
+
+      # 匹配 *.mesh-worker.com 泛域名
+      if [ "$qtype" = "A" ] && [[ "$qname" =~ \.mesh-worker\.com$ || "$qname" = "mesh-worker.com" ]]; then
+        country=$(get_country_from_ip "$remote_ip")
+
+        case "$country" in
+          HK|CN|TW|MO)
+            target_ip="$HK_IP"
+            ;;
+          US|CA)
+            target_ip="$US_IP"
+            ;;
+          MY|SG|ID|TH|VN|PH)
+            target_ip="$MY_IP"
+            ;;
+          *)
+            target_ip="$DEFAULT_IP"
+            ;;
+        esac
+
+        echo "DATA	$qname	$qclass	$qtype	300	$id	$target_ip"
+      fi
+
+      echo "END"
+    }
+
+    handshake
+
+    while read -r line; do
+      IFS=$'\t' read -ra PARTS <<< "$line"
+      cmd="${PARTS[0]}"
+
+      case "$cmd" in
+        Q)
+          qname="${PARTS[1]}"
+          qclass="${PARTS[2]}"
+          qtype="${PARTS[3]}"
+          id="${PARTS[4]}"
+          remote_ip="${PARTS[5]}"
+          query "$qname" "$qclass" "$qtype" "$id" "$remote_ip"
+          ;;
+        AXFR)
+          echo "END"
+          ;;
+        *)
+          echo "FAIL"
+          ;;
+      esac
+    done
+
+---
+# PersistentVolumeClaim for GeoIP database
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: geoip-data
+  namespace: powerdns-system
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+# Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: powerdns
+  namespace: powerdns-system
+  labels:
+    app: powerdns
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: powerdns
+  template:
+    metadata:
+      labels:
+        app: powerdns
+    spec:
+      initContainers:
+      - name: download-geoip
+        image: curlimages/curl:latest
+        command:
+        - sh
+        - -c
+        - |
+          set -e
+          echo "Downloading GeoLite2-Country database..."
+
+          # 使用免费的 GeoLite2 数据库
+          # 注意: 需要在 MaxMind 注册账号获取 LICENSE_KEY
+          # 或者使用已下载的数据库文件
+
+          if [ ! -f /geoip/GeoLite2-Country.mmdb ]; then
+            # 方式1: 从 MaxMind 下载 (需要 LICENSE_KEY)
+            # LICENSE_KEY="${MAXMIND_LICENSE_KEY:-YOUR_LICENSE_KEY}"
+            # curl -L "https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-Country&license_key=${LICENSE_KEY}&suffix=tar.gz" -o /tmp/geoip.tar.gz
+
+            # 方式2: 从公共镜像下载 (示例)
+            curl -L "https://git.io/GeoLite2-Country.mmdb" -o /geoip/GeoLite2-Country.mmdb || \
+            curl -L "https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-Country.mmdb" -o /geoip/GeoLite2-Country.mmdb
+
+            echo "GeoIP database downloaded successfully"
+          else
+            echo "GeoIP database already exists"
+          fi
+
+          # 安装 mmdblookup 工具
+          apk add --no-cache libmaxminddb libmaxminddb-dev || true
+        volumeMounts:
+        - name: geoip-data
+          mountPath: /geoip
+        env:
+        - name: MAXMIND_LICENSE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: maxmind-license
+              key: license-key
+              optional: true
+
+      containers:
+      - name: powerdns
+        image: powerdns/pdns-auth-48:latest
+        ports:
+        - containerPort: 53
+          protocol: UDP
+          name: dns-udp
+        - containerPort: 53
+          protocol: TCP
+          name: dns-tcp
+        - containerPort: 8081
+          protocol: TCP
+          name: api
+        env:
+        - name: PDNS_AUTH_API_KEY
+          value: "changeme-api-key"
+        volumeMounts:
+        - name: config
+          mountPath: /etc/powerdns/pdns.conf
+          subPath: pdns.conf
+        - name: config
+          mountPath: /usr/local/bin/geoip-backend.sh
+          subPath: geoip-backend.sh
+        - name: geoip-data
+          mountPath: /geoip
+        command:
+        - sh
+        - -c
+        - |
+          # 安装必要的工具
+          apk add --no-cache bash libmaxminddb libmaxminddb-libs libmaxminddb-dev
+
+          # 确保脚本可执行
+          chmod +x /usr/local/bin/geoip-backend.sh
+
+          # 启动 PowerDNS
+          exec /usr/local/sbin/pdns_server --config-dir=/etc/powerdns
+        livenessProbe:
+          tcpSocket:
+            port: 53
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          tcpSocket:
+            port: 53
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+
+      volumes:
+      - name: config
+        configMap:
+          name: powerdns-config
+          defaultMode: 0755
+      - name: geoip-data
+        persistentVolumeClaim:
+          claimName: geoip-data
+
+---
+# Service for DNS (UDP/TCP)
+apiVersion: v1
+kind: Service
+metadata:
+  name: powerdns-dns
+  namespace: powerdns-system
+  labels:
+    app: powerdns
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 53
+    targetPort: 53
+    protocol: UDP
+    name: dns-udp
+  - port: 53
+    targetPort: 53
+    protocol: TCP
+    name: dns-tcp
+  selector:
+    app: powerdns
+
+---
+# Service for API
+apiVersion: v1
+kind: Service
+metadata:
+  name: powerdns-api
+  namespace: powerdns-system
+  labels:
+    app: powerdns
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8081
+    targetPort: 8081
+    protocol: TCP
+    name: api
+  selector:
+    app: powerdns
+
+---
+# Optional: Secret for MaxMind License Key
+apiVersion: v1
+kind: Secret
+metadata:
+  name: maxmind-license
+  namespace: powerdns-system
+type: Opaque
+stringData:
+  license-key: "YOUR_MAXMIND_LICENSE_KEY_HERE"
+
+---
+# Optional: Ingress for API (if needed)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: powerdns-api
+  namespace: powerdns-system
+  annotations:
+    kubernetes.io/ingress.class: traefik
+spec:
+  rules:
+  - host: powerdns-api.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: powerdns-api
+            port:
+              number: 8081

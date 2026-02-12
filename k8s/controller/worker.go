@@ -70,7 +70,7 @@ func (w *WorkerAppSpec) EnsureDeployment(ctx context.Context) error {
 								PodAffinityTerm: corev1.PodAffinityTerm{
 									LabelSelector: &metav1.LabelSelector{
 										MatchLabels: map[string]string{
-											"app": fmt.Sprintf("combinator-%s", w.OwnerID),
+											"app": "combinator",
 										},
 									},
 									Namespaces:  []string{k8s.CombinatorNamespace},

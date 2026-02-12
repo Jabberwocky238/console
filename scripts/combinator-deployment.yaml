@@ -31,7 +31,7 @@ metadata:
   name: combinator
   namespace: combinator
 spec:
-  replicas: 1
+  replicas: 5
   selector:
     matchLabels:
       app: combinator

@@ -134,11 +134,14 @@ func (mgr *userDBManager) getOrCreateUserDB(userUID string) (*sql.DB, *userRDB, 
 		db.SetMaxIdleConns(2)
 		db.SetConnMaxLifetime(5 * time.Minute)
 
-		if err := db.Ping(); err != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := db.PingContext(ctx); err != nil {
+			cancel()
 			log.Printf("[rdb] user %s ping attempt %d/3 failed: %v", userUID, i+1, err)
 			db.Close()
 			continue
 		}
+		cancel()
 		log.Printf("[rdb] user %s connected on attempt %d/3", userUID, i+1)
 
 		// Add to LRU cache

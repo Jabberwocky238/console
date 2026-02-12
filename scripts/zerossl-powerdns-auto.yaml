@@ -1,0 +1,113 @@
+---
+# 完整的 PowerDNS + cert-manager + ZeroSSL 泛域名证书自动化方案
+
+# 步骤 1: 安装 cert-manager
+# kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.14.0/cert-manager.yaml
+
+# 步骤 2: 安装 cert-manager-webhook-powerdns
+# helm repo add cert-manager-webhook-powerdns https://zachomedia.github.io/cert-manager-webhook-pdns
+# helm install cert-manager-webhook-powerdns cert-manager-webhook-powerdns/cert-manager-webhook-powerdns -n cert-manager
+
+---
+# PowerDNS API Secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: powerdns-api-key
+  namespace: cert-manager
+type: Opaque
+stringData:
+  api-key: "changeme-api-key"  # 与 PowerDNS 配置中的 api-key 一致
+
+---
+# ZeroSSL ACME Issuer - 使用 PowerDNS Webhook
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: zerossl-powerdns
+spec:
+  acme:
+    server: https://acme.zerossl.com/v2/DV90
+    email: your-email@example.com  # 修改为你的邮箱
+
+    privateKeySecretRef:
+      name: zerossl-account-key
+
+    solvers:
+    - dns01:
+        webhook:
+          groupName: acme.zacharyseguin.ca
+          solverName: pdns
+          config:
+            # PowerDNS API 配置
+            host: http://powerdns-api.powerdns-system.svc.cluster.local:8081
+            apiKeySecretRef:
+              name: powerdns-api-key
+              key: api-key
+            # PowerDNS 服务器 ID（通常是 localhost）
+            serverID: localhost
+            # TTL 设置
+            ttl: 120
+
+---
+# 申请泛域名证书
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: mesh-worker-wildcard
+  namespace: default
+spec:
+  secretName: mesh-worker-wildcard-tls
+  issuerRef:
+    name: zerossl-powerdns
+    kind: ClusterIssuer
+  dnsNames:
+  - "mesh-worker.com"
+  - "*.mesh-worker.com"
+  renewBefore: 720h  # 30天前自动续期
+
+---
+# 使用证书的 Traefik IngressRoute - 支持泛域名匹配
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: mesh-worker-wildcard-https
+  namespace: default
+spec:
+  entryPoints:
+    - websecure  # HTTPS 入口
+  routes:
+  - match: HostRegexp(`{subdomain:[a-z0-9-]+}.mesh-worker.com`)
+    kind: Rule
+    services:
+    - name: worker-router-service  # 需要一个路由服务来处理不同子域名
+      port: 80
+  tls:
+    secretName: mesh-worker-wildcard-tls  # 使用 ZeroSSL 泛域名证书
+
+---
+# 如果需要为特定子域名指定不同的服务，可以添加多个 IngressRoute
+# 优先级高的规则会先匹配
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: mesh-worker-specific-routes
+  namespace: default
+spec:
+  entryPoints:
+    - websecure
+  routes:
+  - match: Host(`app.mesh-worker.com`)
+    kind: Rule
+    priority: 100  # 更高优先级
+    services:
+    - name: app-service
+      port: 80
+  - match: Host(`api.mesh-worker.com`)
+    kind: Rule
+    priority: 100
+    services:
+    - name: api-service
+      port: 80
+  tls:
+    secretName: mesh-worker-wildcard-tls
