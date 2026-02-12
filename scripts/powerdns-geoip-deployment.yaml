@@ -60,6 +60,10 @@ data:
     #!/bin/bash
     # PowerDNS Pipe Backend with GeoIP support
 
+    # 启用调试日志
+    exec 2>/tmp/geoip-backend.log
+    set -x
+
     GEOIP_DB="/geoip/GeoLite2-Country.mmdb"
 
     # 香港IP
@@ -73,9 +77,7 @@ data:
 
     handshake() {
       read -r HELLO
-      if [ "$HELLO" = "HELO\t1" ] || [ "$HELLO" = "HELO	1" ]; then
-        echo "OK	PowerDNS GeoIP Backend"
-      fi
+      echo "OK	PowerDNS GeoIP Backend" >&1
     }
 
     get_country_from_ip() {
@@ -114,10 +116,10 @@ data:
             ;;
         esac
 
-        echo "DATA	$qname	$qclass	$qtype	300	$id	$target_ip"
+        echo "DATA	$qname	$qclass	$qtype	300	$id	$target_ip" >&1
       fi
 
-      echo "END"
+      echo "END" >&1
     }
 
     handshake
@@ -136,10 +138,10 @@ data:
           query "$qname" "$qclass" "$qtype" "$id" "$remote_ip"
           ;;
         AXFR)
-          echo "END"
+          echo "END" >&1
           ;;
         *)
-          echo "FAIL"
+          echo "FAIL" >&1
           ;;
       esac
     done
