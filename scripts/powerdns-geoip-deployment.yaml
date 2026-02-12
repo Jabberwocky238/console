@@ -203,6 +203,8 @@ spec:
       containers:
       - name: powerdns
         image: powerdns/pdns-auth-48:latest
+        securityContext:
+          runAsUser: 0  # 以 root 用户运行，允许安装软件包
         ports:
         - containerPort: 53
           protocol: UDP
