@@ -68,7 +68,7 @@ spec:
 
 ---
 # 使用证书的 Traefik IngressRoute - 泛域名路由到 control-plane-outer
-apiVersion: traefik.containo.us/v1alpha1
+apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
   name: mesh-worker-wildcard-https

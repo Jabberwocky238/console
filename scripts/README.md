@@ -24,6 +24,8 @@ curl -O "https://raw.githubusercontent.com/jabberwocky238/console/main/scripts/i
 curl -O "https://raw.githubusercontent.com/jabberwocky238/console/main/scripts/control-plane-deployment.yaml"
 curl -O "https://raw.githubusercontent.com/jabberwocky238/console/main/scripts/combinator-deployment.yaml"
 curl -O "https://raw.githubusercontent.com/jabberwocky238/console/main/scripts/cockroachdb-deployment.yaml"
+curl -O "https://raw.githubusercontent.com/jabberwocky238/console/main/scripts/powerdns-geoip-deployment.yaml"
+curl -O "https://raw.githubusercontent.com/jabberwocky238/console/main/scripts/zerossl-powerdns-auto.yaml"
 
 export ZEROSSL_EAB_KID=your_eab_kid
 export ZEROSSL_EAB_HMAC_KEY=your_eab_hmac_key
@@ -32,6 +34,10 @@ export DOMAIN=example.com
 export RESEND_API_KEY=sdasdasdadas
 
 # Deploy in order
+envsubst < zerossl-powerdns-auto.yaml | kubectl apply -f -
+envsubst < zerossl-powerdns-auto.yaml | kubectl delete -f -
+envsubst < powerdns-geoip-deployment.yaml | kubectl apply -f -
+envsubst < powerdns-geoip-deployment.yaml | kubectl delete -f -
 envsubst < combinator-deployment.yaml | kubectl apply -f -
 envsubst < combinator-deployment.yaml | kubectl delete -f -
 envsubst < cockroachdb-deployment.yaml | kubectl apply -f -
