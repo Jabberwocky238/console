@@ -1,12 +1,33 @@
 ---
 # 完整的 PowerDNS + cert-manager + ZeroSSL 泛域名证书自动化方案
-
+#
+# 使用方法:
+# 1. 获取 ZeroSSL EAB 凭证: https://app.zerossl.com/developer
+# 2. 设置环境变量:
+#    export ZEROSSL_EAB_KID=your_eab_kid
+#    export ZEROSSL_EAB_HMAC_KEY=your_eab_hmac_key
+# 3. 部署:
+#    envsubst < zerossl-powerdns-auto.yaml | kubectl apply -f -
+#
 # 步骤 1: 安装 cert-manager
 # kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.14.0/cert-manager.yaml
 
 # 步骤 2: 安装 cert-manager-webhook-powerdns
+# export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 # helm repo add cert-manager-webhook-powerdns https://zachomedia.github.io/cert-manager-webhook-pdns
-# helm install cert-manager-webhook-powerdns cert-manager-webhook-powerdns/cert-manager-webhook-powerdns -n cert-manager
+# helm repo update
+# helm install cert-manager-webhook-powerdns cert-manager-webhook-powerdns/cert-manager-webhook-pdns -n cert-manager
+
+---
+# ZeroSSL EAB Secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: zerossl-eab
+  namespace: cert-manager
+type: Opaque
+stringData:
+  secret: ${ZEROSSL_EAB_HMAC_KEY}
 
 ---
 # PowerDNS API Secret
@@ -28,10 +49,16 @@ metadata:
 spec:
   acme:
     server: https://acme.zerossl.com/v2/DV90
-    email: shadowsocks1984@gmail.com  # 修改为你的邮箱
+    email: shadowsocks1984@gmail.com
 
     privateKeySecretRef:
       name: zerossl-account-key
+
+    externalAccountBinding:
+      keyID: ${ZEROSSL_EAB_KID}
+      keySecretRef:
+        name: zerossl-eab
+        key: secret
 
     solvers:
     - dns01:
