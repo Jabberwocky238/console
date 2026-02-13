@@ -45,9 +45,9 @@ func ListCustomDomains(c *gin.Context) {
 // GetCustomDomain gets a custom domain by ID
 func GetCustomDomain(c *gin.Context) {
 	cdid := c.Param("id")
-	cd := k8s.GetCustomDomain(cdid)
-	if cd == nil {
-		c.JSON(404, gin.H{"error": "domain not found"})
+	cd, err := k8s.GetCustomDomain(cdid)
+	if err != nil {
+		c.JSON(404, gin.H{"error": "domain not found: " + err.Error()})
 		return
 	}
 	c.JSON(200, cd)

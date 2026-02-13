@@ -6,7 +6,8 @@
       "Bash(ls:*)",
       "Bash(./.trellis/scripts/task.sh:*)",
       "Bash(go mod tidy:*)",
-      "Bash(go build:*)"
+      "Bash(go build:*)",
+      "Bash(find:*)"
     ]
   }
 }

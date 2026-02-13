@@ -13,6 +13,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"slices"
 )
 
 type DomainStatus string
@@ -65,82 +66,91 @@ func NewCustomDomain(userUID, domain, target string) (*CustomDomain, error) {
 		CreatedAt: time.Now(),
 	}
 
-	// Automatically create TXT record in jw238dns if client is available
-	if DNS01Client != nil {
-		if err := DNS01Client.AddTXTRecord(txtName, txtValue, 300); err != nil {
-			log.Printf("[customdomain] Failed to create TXT record in jw238dns: %v", err)
-			// Don't fail the request, user can still manually create TXT record
-		} else {
-			log.Printf("[customdomain] Created TXT record in jw238dns: %s = %s", txtName, txtValue)
-		}
-	}
-
+	log.Printf("[customdomain] Created custom domain request: %s -> %s (TXT: %s = %s)", domain, target, txtName, txtValue)
 	return cd, nil
 }
 
-// VerifyTXT checks if the TXT record is correctly set
+// VerifyTXT checks if the TXT record is correctly set via DNS lookup
 func (cd *CustomDomain) VerifyTXT() bool {
-	// Try jw238dns API first if available
-	if DNS01Client != nil {
-		records, err := DNS01Client.GetTXTRecord(cd.TXTName)
-		if err != nil {
-			log.Printf("[customdomain] jw238dns API query failed: %v, falling back to net.LookupTXT", err)
-		} else {
-			for _, r := range records {
-				if r == cd.TXTValue {
-					log.Printf("[customdomain] TXT record verified via jw238dns API: %s", cd.TXTName)
-					return true
-				}
-			}
-			// If jw238dns returned records but none matched, don't fallback
-			if len(records) > 0 {
-				return false
-			}
-		}
-	}
-
-	// Fallback to standard DNS lookup
 	records, err := net.LookupTXT(cd.TXTName)
 	if err != nil {
+		log.Printf("[customdomain] TXT lookup failed for %s: %v", cd.TXTName, err)
 		return false
 	}
-	for _, r := range records {
-		if r == cd.TXTValue {
-			log.Printf("[customdomain] TXT record verified via DNS lookup: %s", cd.TXTName)
-			return true
-		}
+
+	if slices.Contains(records, cd.TXTValue) {
+		log.Printf("[customdomain] TXT record verified: %s = %s", cd.TXTName, cd.TXTValue)
+		return true
 	}
+
+	log.Printf("[customdomain] TXT record not found or mismatch for %s (expected: %s, found: %v)", cd.TXTName, cd.TXTValue, records)
 	return false
 }
 
-// StartVerification starts the verification loop (5s interval, 12 times max)
+// VerifyCNAME checks if the CNAME record points to the correct target
+func (cd *CustomDomain) VerifyCNAME() bool {
+	cname, err := net.LookupCNAME(cd.Domain)
+	if err != nil {
+		log.Printf("[customdomain] CNAME lookup failed for %s: %v", cd.Domain, err)
+		return false
+	}
+
+	// Remove trailing dot from CNAME result
+	if len(cname) > 0 && cname[len(cname)-1] == '.' {
+		cname = cname[:len(cname)-1]
+	}
+
+	// Check if CNAME matches target (with or without trailing dot)
+	targetWithoutDot := cd.Target
+	if len(targetWithoutDot) > 0 && targetWithoutDot[len(targetWithoutDot)-1] == '.' {
+		targetWithoutDot = targetWithoutDot[:len(targetWithoutDot)-1]
+	}
+
+	if cname == targetWithoutDot || cname == cd.Target {
+		log.Printf("[customdomain] CNAME record verified: %s -> %s", cd.Domain, cname)
+		return true
+	}
+
+	log.Printf("[customdomain] CNAME record mismatch for %s (expected: %s, found: %s)", cd.Domain, cd.Target, cname)
+	return false
+}
+
+// StartVerification starts the verification loop (5s interval, 12 times max = 60s total)
 func (cd *CustomDomain) StartVerification() {
 	go func() {
-		for i := 0; i < 12; i++ {
+		for i := range 12 {
 			time.Sleep(5 * time.Second)
-			if cd.VerifyTXT() {
+
+			// Check both TXT and CNAME records
+			txtVerified := cd.VerifyTXT()
+			cnameVerified := cd.VerifyCNAME()
+
+			if txtVerified && cnameVerified {
+				log.Printf("[customdomain] Verification successful for %s (attempt %d/12)", cd.Domain, i+1)
 				cd.Status = DomainStatusSuccess
 				dblayer.UpdateCustomDomainStatus(cd.CDID, string(DomainStatusSuccess))
-				cd.CreateIngressRoute()
 
-				// Clean up TXT record from jw238dns after successful verification
-				if DNS01Client != nil {
-					if err := DNS01Client.DeleteTXTRecord(cd.TXTName); err != nil {
-						log.Printf("[customdomain] Failed to delete TXT record from jw238dns: %v", err)
-					} else {
-						log.Printf("[customdomain] Deleted TXT record from jw238dns: %s", cd.TXTName)
-					}
+				// Create IngressRoute and request certificate
+				if err := cd.CreateIngressRoute(); err != nil {
+					log.Printf("[customdomain] Failed to create IngressRoute for %s: %v", cd.Domain, err)
+					cd.Status = DomainStatusError
+					dblayer.UpdateCustomDomainStatus(cd.CDID, string(DomainStatusError))
 				}
 				return
 			}
+
+			log.Printf("[customdomain] Verification attempt %d/12 for %s (TXT: %v, CNAME: %v)", i+1, cd.Domain, txtVerified, cnameVerified)
 		}
+
+		// Failed after 12 attempts
 		cd.Status = DomainStatusError
 		dblayer.UpdateCustomDomainStatus(cd.CDID, string(DomainStatusError))
-		log.Printf("[customdomain] Verification failed for %s after 12 attempts", cd.Domain)
+		log.Printf("[customdomain] Verification failed for %s after 12 attempts (60s)", cd.Domain)
 	}()
 }
 
 // CreateIngressRoute creates an ExternalName Service and IngressRoute for the custom domain
+// Uses HTTP-01 challenge for ZeroSSL certificate
 func (cd *CustomDomain) CreateIngressRoute() error {
 	if DynamicClient == nil || K8sClient == nil {
 		return fmt.Errorf("k8s client not initialized")
@@ -166,10 +176,12 @@ func (cd *CustomDomain) CreateIngressRoute() error {
 		},
 	}
 	if _, err := K8sClient.CoreV1().Services(IngressNamespace).Create(ctx, svc, metav1.CreateOptions{}); err != nil {
+		log.Printf("[customdomain] Failed to create service for %s: %v", cd.Domain, err)
 		return fmt.Errorf("create service failed: %w", err)
 	}
+	log.Printf("[customdomain] Created ExternalName service: %s -> %s", name, cd.Target)
 
-	// Create cert-manager Certificate for the custom domain
+	// Create cert-manager Certificate for the custom domain (HTTP-01 challenge)
 	cert := &unstructured.Unstructured{
 		Object: map[string]any{
 			"apiVersion": "cert-manager.io/v1",
@@ -186,15 +198,17 @@ func (cd *CustomDomain) CreateIngressRoute() error {
 				"secretName": tlsSecretName,
 				"dnsNames":   []any{cd.Domain},
 				"issuerRef": map[string]any{
-					"name": "cert-issuer",
+					"name": "zerossl-issuer",
 					"kind": "ClusterIssuer",
 				},
 			},
 		},
 	}
 	if _, err := DynamicClient.Resource(certificateGVR).Namespace(IngressNamespace).Create(ctx, cert, metav1.CreateOptions{}); err != nil {
+		log.Printf("[customdomain] Failed to create certificate for %s: %v", cd.Domain, err)
 		return fmt.Errorf("create certificate failed: %w", err)
 	}
+	log.Printf("[customdomain] Created Certificate with HTTP-01 challenge: %s", cd.Domain)
 
 	// Create IngressRoute
 	ingressRoute := &unstructured.Unstructured{
@@ -230,15 +244,20 @@ func (cd *CustomDomain) CreateIngressRoute() error {
 		},
 	}
 
-	_, err := DynamicClient.Resource(IngressRouteGVR).Namespace(IngressNamespace).Create(ctx, ingressRoute, metav1.CreateOptions{})
-	return err
+	if _, err := DynamicClient.Resource(IngressRouteGVR).Namespace(IngressNamespace).Create(ctx, ingressRoute, metav1.CreateOptions{}); err != nil {
+		log.Printf("[customdomain] Failed to create IngressRoute for %s: %v", cd.Domain, err)
+		return fmt.Errorf("create ingressroute failed: %w", err)
+	}
+
+	log.Printf("[customdomain] Created IngressRoute for %s with TLS secret %s", cd.Domain, tlsSecretName)
+	return nil
 }
 
 // GetCustomDomain returns a custom domain by CDID
-func GetCustomDomain(cdid string) *CustomDomain {
+func GetCustomDomain(cdid string) (*CustomDomain, error) {
 	cd, err := dblayer.GetCustomDomain(cdid)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	return &CustomDomain{
 		ID:        cd.ID,
@@ -250,7 +269,7 @@ func GetCustomDomain(cdid string) *CustomDomain {
 		Status:    DomainStatus(cd.Status),
 		UserUID:   cd.UserUID,
 		CreatedAt: cd.CreatedAt,
-	}
+	}, nil
 }
 
 // ListCustomDomains returns all custom domains for a user
@@ -280,10 +299,10 @@ func ListCustomDomains(userUID string) []*CustomDomain {
 // DeleteCustomDomain deletes a custom domain, Service and IngressRoute
 func DeleteCustomDomain(cdid string) error {
 	// Get domain info before deletion for TXT cleanup
-	cd := GetCustomDomain(cdid)
+	_, err := GetCustomDomain(cdid)
 
 	// Delete from database
-	if err := dblayer.DeleteCustomDomain(cdid); err != nil {
+	if err = dblayer.DeleteCustomDomain(cdid); err != nil {
 		return err
 	}
 
@@ -295,24 +314,12 @@ func DeleteCustomDomain(cdid string) error {
 		K8sClient.CoreV1().Services(IngressNamespace).Delete(ctx, name, metav1.DeleteOptions{})
 	}
 
-	// Delete IngressRoute
+	// Delete IngressRoute AND Certificate
 	if DynamicClient != nil {
 		DynamicClient.Resource(IngressRouteGVR).Namespace(IngressNamespace).Delete(ctx, name, metav1.DeleteOptions{})
-	}
-
-	// Delete Certificate
-	if DynamicClient != nil {
 		DynamicClient.Resource(certificateGVR).Namespace(IngressNamespace).Delete(ctx, name, metav1.DeleteOptions{})
 	}
 
-	// Clean up TXT record from jw238dns
-	if cd != nil && DNS01Client != nil {
-		if err := DNS01Client.DeleteTXTRecord(cd.TXTName); err != nil {
-			log.Printf("[customdomain] Failed to delete TXT record from jw238dns: %v", err)
-		} else {
-			log.Printf("[customdomain] Deleted TXT record from jw238dns: %s", cd.TXTName)
-		}
-	}
-
+	log.Printf("[customdomain] Deleted custom domain resources for %s", cdid)
 	return nil
 }

@@ -190,10 +190,10 @@ func CreateWorkerAppCR(
 	port int,
 ) error {
 	cr := &unstructured.Unstructured{
-		Object: map[string]interface{}{
+		Object: map[string]any{
 			"apiVersion": Group + "/" + Version,
 			"kind":       WorkerKind,
-			"metadata": map[string]interface{}{
+			"metadata": map[string]any{
 				"name":      name,
 				"namespace": k8s.WorkerNamespace,
 			},
