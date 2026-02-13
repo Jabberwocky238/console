@@ -36,8 +36,8 @@ export RESEND_API_KEY=sdasdasdadas
 # Deploy in order
 envsubst < zerossl-powerdns-auto.yaml | kubectl apply -f -
 envsubst < zerossl-powerdns-auto.yaml | kubectl delete -f -
-envsubst < powerdns-geoip-deployment.yaml | kubectl apply -f -
-envsubst < powerdns-geoip-deployment.yaml | kubectl delete -f -
+kubectl apply -f powerdns-geoip-deployment.yaml
+kubectl delete -f powerdns-geoip-deployment.yaml
 envsubst < combinator-deployment.yaml | kubectl apply -f -
 envsubst < combinator-deployment.yaml | kubectl delete -f -
 envsubst < cockroachdb-deployment.yaml | kubectl apply -f -

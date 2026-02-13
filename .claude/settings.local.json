@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./.trellis/scripts/get-context.sh:*)",
+      "Bash(./.trellis/scripts/init-developer.sh:*)",
+      "Bash(ls:*)"
+    ]
+  }
+}
