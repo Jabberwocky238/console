@@ -121,6 +121,8 @@ func main() {
 func checkEnvOuter() {
 	var shouldPanic bool = false
 	requiredEnvs := []string{"DOMAIN", "RESEND_API_KEY"}
+	optionalEnvs := []string{"JW238DNS_API_URL"}
+
 	for _, env := range requiredEnvs {
 		thisVar := os.Getenv(env)
 		if thisVar == "" {
@@ -141,6 +143,16 @@ func checkEnvOuter() {
 	if shouldPanic {
 		log.Fatalf("ENV not set, panic")
 		panic("One or more required environment variables are not set")
+	}
+
+	// Check optional environment variables
+	for _, env := range optionalEnvs {
+		thisVar := os.Getenv(env)
+		if thisVar == "" {
+			log.Printf("Optional environment variable %s is not set", env)
+		} else {
+			log.Printf("Optional environment variable %s is set", env)
+		}
 	}
 }
 

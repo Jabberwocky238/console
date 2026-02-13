@@ -103,3 +103,34 @@ User → Outer (9900) → Inner (9901) → K8s Cluster
 ### Next Steps
 
 - None - task complete
+
+## Session 2: Replace Frontend/Backend with Outer/Inner/Web Terminology
+
+**Date**: 2026-02-13
+**Task**: Replace Frontend/Backend with Outer/Inner/Web Terminology
+
+### Summary
+
+Updated all Trellis documentation to use outer/inner/web terminology instead of frontend/backend, aligning with the dual gateway architecture
+
+### Main Changes
+
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5839c25` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -3,7 +3,10 @@
     "allow": [
       "Bash(./.trellis/scripts/get-context.sh:*)",
       "Bash(./.trellis/scripts/init-developer.sh:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(./.trellis/scripts/task.sh:*)",
+      "Bash(go mod tidy:*)",
+      "Bash(go build:*)"
     ]
   }
 }

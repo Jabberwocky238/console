@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"jabberwocky238/console/dblayer"
+	"log"
 	"net"
 	"time"
 
@@ -64,17 +65,48 @@ func NewCustomDomain(userUID, domain, target string) (*CustomDomain, error) {
 		CreatedAt: time.Now(),
 	}
 
+	// Automatically create TXT record in jw238dns if client is available
+	if DNS01Client != nil {
+		if err := DNS01Client.AddTXTRecord(txtName, txtValue, 300); err != nil {
+			log.Printf("[customdomain] Failed to create TXT record in jw238dns: %v", err)
+			// Don't fail the request, user can still manually create TXT record
+		} else {
+			log.Printf("[customdomain] Created TXT record in jw238dns: %s = %s", txtName, txtValue)
+		}
+	}
+
 	return cd, nil
 }
 
 // VerifyTXT checks if the TXT record is correctly set
 func (cd *CustomDomain) VerifyTXT() bool {
+	// Try jw238dns API first if available
+	if DNS01Client != nil {
+		records, err := DNS01Client.GetTXTRecord(cd.TXTName)
+		if err != nil {
+			log.Printf("[customdomain] jw238dns API query failed: %v, falling back to net.LookupTXT", err)
+		} else {
+			for _, r := range records {
+				if r == cd.TXTValue {
+					log.Printf("[customdomain] TXT record verified via jw238dns API: %s", cd.TXTName)
+					return true
+				}
+			}
+			// If jw238dns returned records but none matched, don't fallback
+			if len(records) > 0 {
+				return false
+			}
+		}
+	}
+
+	// Fallback to standard DNS lookup
 	records, err := net.LookupTXT(cd.TXTName)
 	if err != nil {
 		return false
 	}
 	for _, r := range records {
 		if r == cd.TXTValue {
+			log.Printf("[customdomain] TXT record verified via DNS lookup: %s", cd.TXTName)
 			return true
 		}
 	}
@@ -90,11 +122,21 @@ func (cd *CustomDomain) StartVerification() {
 				cd.Status = DomainStatusSuccess
 				dblayer.UpdateCustomDomainStatus(cd.CDID, string(DomainStatusSuccess))
 				cd.CreateIngressRoute()
+
+				// Clean up TXT record from jw238dns after successful verification
+				if DNS01Client != nil {
+					if err := DNS01Client.DeleteTXTRecord(cd.TXTName); err != nil {
+						log.Printf("[customdomain] Failed to delete TXT record from jw238dns: %v", err)
+					} else {
+						log.Printf("[customdomain] Deleted TXT record from jw238dns: %s", cd.TXTName)
+					}
+				}
 				return
 			}
 		}
 		cd.Status = DomainStatusError
 		dblayer.UpdateCustomDomainStatus(cd.CDID, string(DomainStatusError))
+		log.Printf("[customdomain] Verification failed for %s after 12 attempts", cd.Domain)
 	}()
 }
 
@@ -237,6 +279,9 @@ func ListCustomDomains(userUID string) []*CustomDomain {
 
 // DeleteCustomDomain deletes a custom domain, Service and IngressRoute
 func DeleteCustomDomain(cdid string) error {
+	// Get domain info before deletion for TXT cleanup
+	cd := GetCustomDomain(cdid)
+
 	// Delete from database
 	if err := dblayer.DeleteCustomDomain(cdid); err != nil {
 		return err
@@ -258,6 +303,15 @@ func DeleteCustomDomain(cdid string) error {
 	// Delete Certificate
 	if DynamicClient != nil {
 		DynamicClient.Resource(certificateGVR).Namespace(IngressNamespace).Delete(ctx, name, metav1.DeleteOptions{})
+	}
+
+	// Clean up TXT record from jw238dns
+	if cd != nil && DNS01Client != nil {
+		if err := DNS01Client.DeleteTXTRecord(cd.TXTName); err != nil {
+			log.Printf("[customdomain] Failed to delete TXT record from jw238dns: %v", err)
+		} else {
+			log.Printf("[customdomain] Deleted TXT record from jw238dns: %s", cd.TXTName)
+		}
 	}
 
 	return nil

@@ -1,3 +1,9 @@
 [submodule "gh-action"]
 	path = gh-action
 	url = https://github.com/Jabberwocky238/combinator-action
+[submodule "jw238dns"]
+	path = jw238dns
+	url = git@github.com:Jabberwocky238/jw238dns.git
+[submodule "combinator"]
+	path = combinator
+	url = git@github.com:Jabberwocky238/combinator.git

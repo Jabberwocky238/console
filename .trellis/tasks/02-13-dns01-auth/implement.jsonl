@@ -1,0 +1,6 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/shared/index.md", "reason": "Shared coding standards"}
+{"file": ".trellis/spec/outer/index.md", "reason": "Outer gateway development guide"}
+{"file": ".trellis/spec/outer/components.md", "reason": "Component conventions"}
+{"file": "k8s/customdomain.go", "reason": "Existing custom domain implementation"}
+{"file": "jw238dns/http/types.go", "reason": "jw238dns API types"}
