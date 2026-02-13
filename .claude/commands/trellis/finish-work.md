@@ -27,9 +27,11 @@ pnpm test
 ### 2. Documentation Sync
 
 **Structure Docs**:
-- [ ] Does `.trellis/spec/backend/` need updates?
+- [ ] Does `.trellis/spec/inner/` need updates?
   - New patterns, new modules, new conventions
-- [ ] Does `.trellis/spec/frontend/` need updates?
+- [ ] Does `.trellis/spec/outer/` need updates?
+  - New API patterns, new handlers, new conventions
+- [ ] Does `.trellis/spec/web/` need updates?
   - New components, new hooks, new patterns
 - [ ] Does `.trellis/spec/guides/` need updates?
   - New cross-layer flows, lessons from bugs

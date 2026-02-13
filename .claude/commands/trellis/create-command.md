@@ -130,11 +130,14 @@ git diff main...HEAD --name-only
 
 ### 2. Categorized Review
 
-**Frontend files** (`apps/web/`):
-- Reference `.trellis/spec/frontend/index.md`
+**Web files** (`web/`):
+- Reference `.trellis/spec/outer/index.md` or `.trellis/spec/web/index.md`
 
-**Backend files** (`packages/api/`):
-- Reference `.trellis/spec/backend/index.md`
+**Inner gateway files** (`cmd/inner/`, `handlers/`, `dblayer/`, `k8s/`):
+- Reference `.trellis/spec/inner/index.md`
+
+**Outer gateway files** (`cmd/outer/`, `handlers/`):
+- Reference `.trellis/spec/outer/index.md`
 
 ### 3. Output Review Report
 

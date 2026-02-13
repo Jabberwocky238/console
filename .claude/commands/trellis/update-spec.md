@@ -10,7 +10,7 @@ When you learn something valuable (from debugging, implementing, or discussion),
 
 | Trigger | Example | Target Spec |
 |---------|---------|-------------|
-| **Fixed a bug** | Found a subtle issue with error handling | `backend/error-handling.md` |
+| **Fixed a bug** | Found a subtle issue with error handling | `inner/error-handling.md` or `outer/error-handling.md` |
 | **Discovered a pattern** | Found a better way to structure code | Relevant guidelines file |
 | **Hit a gotcha** | Learned that X must be done before Y | Relevant spec + "Common Mistakes" section |
 | **Established a convention** | Team agreed on naming pattern | `quality-guidelines.md` |
@@ -22,10 +22,13 @@ When you learn something valuable (from debugging, implementing, or discussion),
 
 ```
 .trellis/spec/
-├── backend/           # Backend development standards
+├── inner/             # Inner gateway development standards
 │   ├── index.md       # Overview and links
 │   └── *.md           # Topic-specific guidelines
-├── frontend/          # Frontend development standards
+├── outer/             # Outer gateway development standards
+│   ├── index.md       # Overview and links
+│   └── *.md           # Topic-specific guidelines
+├── web/               # Web frontend development standards (optional)
 │   ├── index.md       # Overview and links
 │   └── *.md           # Topic-specific guidelines
 └── guides/            # Thinking guides
@@ -166,8 +169,9 @@ If you're unsure what to update, answer these prompts:
    - No → Maybe not worth documenting
 
 4. **Which area does it relate to?**
-   - [ ] Backend code
-   - [ ] Frontend code
+   - [ ] Inner gateway code
+   - [ ] Outer gateway code
+   - [ ] Web frontend code
    - [ ] Cross-layer data flow
    - [ ] Code organization/reuse
    - [ ] Quality/testing

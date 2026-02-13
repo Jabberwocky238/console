@@ -41,9 +41,10 @@ Before implementing, read:
 
 Read relevant specs based on task type:
 
-- Backend: `.trellis/spec/backend/`
-- Frontend: `.trellis/spec/frontend/`
-- Shared: `.trellis/spec/shared/`
+- Inner Gateway: `.trellis/spec/inner/`
+- Outer Gateway: `.trellis/spec/outer/`
+- Web Frontend: `.trellis/spec/web/`
+- Guides: `.trellis/spec/guides/`
 
 ### 2. Understand Requirements
 

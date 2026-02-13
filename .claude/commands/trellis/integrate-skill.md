@@ -43,10 +43,11 @@ Based on skill type, determine which guidelines to update:
 
 | Skill Category | Integration Target |
 |----------------|-------------------|
-| UI/Frontend (`frontend-design`, `web-artifacts-builder`) | `.trellis/spec/frontend/` |
-| Backend/API (`mcp-builder`) | `.trellis/spec/backend/` |
+| UI/Web Frontend (`frontend-design`, `web-artifacts-builder`) | `.trellis/spec/web/` or `.trellis/spec/outer/` |
+| Inner Gateway/API (`mcp-builder`) | `.trellis/spec/inner/` |
+| Outer Gateway/API | `.trellis/spec/outer/` |
 | Documentation (`doc-coauthoring`, `docx`, `pdf`) | `.trellis/` or create dedicated guidelines |
-| Testing (`webapp-testing`) | `.trellis/spec/frontend/` (E2E) |
+| Testing (`webapp-testing`) | `.trellis/spec/web/` (E2E) |
 
 ### 3. Analyze Skill Content
 
@@ -89,7 +90,7 @@ See `examples/skills/<skill-name>/`
 #### 4.2 Create Examples Directory (if code examples exist)
 
 ```bash
-# Directory structure ({target} = frontend or backend)
+# Directory structure ({target} = inner, outer, or web)
 .trellis/spec/{target}/
 |-- doc.md                      # Add skill-related section
 |-- index.md                    # Update index
@@ -138,7 +139,7 @@ Add to the Quick Navigation table in `index.md`:
 | Code examples | `.trellis/spec/{target}/examples/skills/<name>/` |
 | Index update | `.trellis/spec/{target}/index.md` |
 
-> `{target}` = `frontend` or `backend`
+> `{target}` = `inner`, `outer`, or `web`
 
 ### # Dependencies (if needed)
 
@@ -176,9 +177,9 @@ If this skill is frequently used, create a shortcut command:
 
 | Skill | Integration Target | Examples Directory |
 |-------|-------------------|-------------------|
-| `frontend-design` | `frontend` | `examples/skills/frontend-design/` |
-| `mcp-builder` | `backend` | `examples/skills/mcp-builder/` |
-| `webapp-testing` | `frontend` | `examples/skills/webapp-testing/` |
+| `frontend-design` | `web` or `outer` | `examples/skills/frontend-design/` |
+| `mcp-builder` | `inner` | `examples/skills/mcp-builder/` |
+| `webapp-testing` | `web` | `examples/skills/webapp-testing/` |
 | `doc-coauthoring` | `.trellis/` | N/A (documentation workflow only) |
 
 ## Example: Integrating `mcp-builder` Skill
@@ -186,7 +187,7 @@ If this skill is frequently used, create a shortcut command:
 ### Directory Structure
 
 ```
-.trellis/spec/backend/
+.trellis/spec/inner/
 |-- doc.md                           # Add MCP section
 |-- index.md                         # Add index entry
 \-- examples/

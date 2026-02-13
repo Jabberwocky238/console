@@ -40,9 +40,9 @@ This shows: developer identity, git status, current task (if any), active tasks.
 ### Step 3: Read Guidelines Index
 
 ```bash
-cat .trellis/spec/frontend/index.md  # Frontend guidelines
-cat .trellis/spec/backend/index.md   # Backend guidelines
-cat .trellis/spec/guides/index.md    # Thinking guides
+cat .trellis/spec/outer/index.md   # Outer gateway guidelines
+cat .trellis/spec/inner/index.md   # Inner gateway guidelines
+cat .trellis/spec/guides/index.md  # Thinking guides
 ```
 
 ### Step 4: Report and Ask
@@ -107,7 +107,7 @@ Task(
   prompt: "Analyze the codebase for this task:
 
   Task: <user's task description>
-  Type: <frontend/backend/fullstack>
+  Type: <outer/inner/web/fullstack>
 
   Please find:
   1. Relevant spec files in .trellis/spec/
@@ -144,7 +144,7 @@ Initialize default context:
 
 ```bash
 ./.trellis/scripts/task.sh init-context "$TASK_DIR" <type>
-# type: backend | frontend | fullstack
+# type: inner | outer | web | fullstack
 ```
 
 Add specs found by Research Agent:

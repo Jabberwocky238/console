@@ -118,7 +118,7 @@ You receive input via environment variables (set by plan.sh):
 
 ```bash
 PLAN_TASK_NAME    # Task name (e.g., "user-auth")
-PLAN_DEV_TYPE        # Development type: backend | frontend | fullstack
+PLAN_DEV_TYPE        # Development type: inner | outer | web | fullstack
 PLAN_REQUIREMENT     # Requirement description from user
 PLAN_TASK_DIR     # Pre-created task directory path
 ```

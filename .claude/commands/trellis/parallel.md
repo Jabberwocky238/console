@@ -41,9 +41,9 @@ cat .trellis/workflow.md  # Development process, conventions, and quick start gu
 ### Step 3: Read Project Guidelines `[AI]`
 
 ```bash
-cat .trellis/spec/frontend/index.md  # Frontend guidelines index
-cat .trellis/spec/backend/index.md   # Backend guidelines index
-cat .trellis/spec/guides/index.md    # Thinking guides
+cat .trellis/spec/outer/index.md   # Outer gateway guidelines index
+cat .trellis/spec/inner/index.md   # Inner gateway guidelines index
+cat .trellis/spec/guides/index.md  # Thinking guides
 ```
 
 ### Step 4: Ask User for Requirements
@@ -52,7 +52,7 @@ Ask the user:
 
 1. What feature to develop?
 2. Which modules are involved?
-3. Development type? (backend / frontend / fullstack)
+3. Development type? (inner / outer / web / fullstack)
 
 ---
 
@@ -70,7 +70,7 @@ Use when:
 ```bash
 ./.trellis/scripts/multi-agent/plan.sh \
   --name "<feature-name>" \
-  --type "<backend|frontend|fullstack>" \
+  --type "<inner|outer|web|fullstack>" \
   --requirement "<user requirement description>"
 ```
 
