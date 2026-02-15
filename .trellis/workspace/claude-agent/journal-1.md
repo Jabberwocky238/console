@@ -206,3 +206,56 @@ Updated all Trellis documentation to use outer/inner/web terminology instead of 
 ### Next Steps
 
 - None - task complete
+
+## Session 4: WorkerApp CRD资源限制字段
+
+**Date**: 2026-02-14
+**Task**: WorkerApp CRD资源限制字段
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+## Changes
+
+| Area | Description |
+|------|-------------|
+| CRD | 新增 assignedCPU/assignedMemory/assignedDisk/maxReplicas/mainRegion 五个字段 |
+| CRD YAML | CRD定义从代码中的EnsureCRD移到 `scripts/workerapp-crd.yaml`，删除 `crd.go` |
+| Controller | EnsureDeployment 根据新字段设置 resource limits/requests、replica数量、node affinity |
+| Database | workers表新增5列，所有查询和Scan同步更新 |
+| Handler | CreateWorker API 接受新字段 |
+| Defaults | CPU=1, Memory=500Mi, Disk=2Gi, MaxReplicas=1, MainRegion=global |
+
+**Modified Files**:
+- `k8s/controller/types.go` - WorkerAppSpec新增字段
+- `k8s/controller/worker.go` - EnsureDeployment使用资源限制和region affinity
+- `k8s/controller/worker.controller.go` - workerFromUnstructured解析新字段，CreateWorkerAppCR写入新字段
+- `k8s/controller/crd.go` - 已删除
+- `cmd/inner/main.go` - 移除EnsureCRD调用
+- `scripts/workerapp-crd.yaml` - 新建CRD YAML定义
+- `scripts/init.sql` - workers表新增列
+- `dblayer/models.go` - Worker model新增字段
+- `dblayer/worker.actions.go` - 所有查询更新
+- `handlers/worker.handler.go` - CreateWorker接受新字段
+- `handlers/jobs/worker.jobs.go` - 传递新字段到CreateWorkerAppCR
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `91ddef2` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
