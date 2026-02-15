@@ -173,13 +173,27 @@ func workerFromUnstructured(u *unstructured.Unstructured) *WorkerAppSpec {
 		return nil
 	}
 	port, _ := spec["port"].(int64)
+	maxReplicas, _ := spec["maxReplicas"].(int64)
 	return &WorkerAppSpec{
-		WorkerID: fmt.Sprintf("%v", spec["workerID"]),
-		OwnerID:  fmt.Sprintf("%v", spec["ownerID"]),
-		OwnerSK:  fmt.Sprintf("%v", spec["ownerSK"]),
-		Image:    fmt.Sprintf("%v", spec["image"]),
-		Port:     int(port),
+		WorkerID:    fmt.Sprintf("%v", spec["workerID"]),
+		OwnerID:     fmt.Sprintf("%v", spec["ownerID"]),
+		OwnerSK:     fmt.Sprintf("%v", spec["ownerSK"]),
+		Image:       fmt.Sprintf("%v", spec["image"]),
+		Port:        int(port),
+		AssignedCPU:    strVal(spec, "assignedCPU"),
+		AssignedMemory: strVal(spec, "assignedMemory"),
+		AssignedDisk:   strVal(spec, "assignedDisk"),
+		MaxReplicas: int(maxReplicas),
+		MainRegion:  strVal(spec, "mainRegion"),
 	}
+}
+
+func strVal(m map[string]interface{}, key string) string {
+	v, ok := m[key]
+	if !ok || v == nil {
+		return ""
+	}
+	return fmt.Sprintf("%v", v)
 }
 
 // --- CR CRUD (used by handlers) ---
@@ -188,7 +202,33 @@ func CreateWorkerAppCR(
 	client dynamic.Interface,
 	name, workerID, ownerID, image string, ownerSK string,
 	port int,
+	assignedCPU, assignedMemory, assignedDisk string,
+	maxReplicas int,
+	mainRegion string,
 ) error {
+	spec := map[string]interface{}{
+		"workerID": workerID,
+		"ownerID":  ownerID,
+		"ownerSK":  ownerSK,
+		"image":    image,
+		"port":     int64(port),
+	}
+	if assignedCPU != "" {
+		spec["assignedCPU"] = assignedCPU
+	}
+	if assignedMemory != "" {
+		spec["assignedMemory"] = assignedMemory
+	}
+	if assignedDisk != "" {
+		spec["assignedDisk"] = assignedDisk
+	}
+	if maxReplicas > 0 {
+		spec["maxReplicas"] = int64(maxReplicas)
+	}
+	if mainRegion != "" {
+		spec["mainRegion"] = mainRegion
+	}
+
 	cr := &unstructured.Unstructured{
 		Object: map[string]any{
 			"apiVersion": Group + "/" + Version,
@@ -197,13 +237,7 @@ func CreateWorkerAppCR(
 				"name":      name,
 				"namespace": k8s.WorkerNamespace,
 			},
-			"spec": map[string]interface{}{
-				"workerID": workerID,
-				"ownerID":  ownerID,
-				"ownerSK":  ownerSK,
-				"image":    image,
-				"port":     int64(port),
-			},
+			"spec": spec,
 		},
 	}
 

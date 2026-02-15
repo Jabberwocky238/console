@@ -20,11 +20,16 @@ var WorkerAppGVR = schema.GroupVersionResource{
 }
 
 type WorkerAppSpec struct {
-	WorkerID string `json:"workerID"`
-	OwnerID  string `json:"ownerID"`
-	OwnerSK  string `json:"ownerSK"`
-	Image    string `json:"image"`
-	Port     int    `json:"port"`
+	WorkerID    string `json:"workerID"`
+	OwnerID     string `json:"ownerID"`
+	OwnerSK     string `json:"ownerSK"`
+	Image       string `json:"image"`
+	Port        int    `json:"port"`
+	AssignedCPU    string `json:"assignedCPU"`    // e.g. "1"
+	AssignedMemory string `json:"assignedMemory"` // e.g. "500Mi"
+	AssignedDisk   string `json:"assignedDisk"`   // e.g. "2Gi"
+	MaxReplicas int    `json:"maxReplicas"` // e.g. 3
+	MainRegion  string `json:"mainRegion"`  // e.g. "us-east-1"
 }
 
 type WorkerAppStatus struct {

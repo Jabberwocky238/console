@@ -30,7 +30,12 @@ func (h *WorkerHandler) CreateWorker(c *gin.Context) {
 	userUID := c.GetString("user_id")
 
 	var req struct {
-		WorkerName string `json:"worker_name" binding:"required"`
+		WorkerName     string `json:"worker_name" binding:"required"`
+		AssignedCPU    string `json:"assigned_cpu"`
+		AssignedMemory string `json:"assigned_memory"`
+		AssignedDisk   string `json:"assigned_disk"`
+		MaxReplicas    int    `json:"max_replicas"`
+		MainRegion     string `json:"main_region"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(400, gin.H{"error": err.Error()})
@@ -39,7 +44,7 @@ func (h *WorkerHandler) CreateWorker(c *gin.Context) {
 
 	workerID := uuid.New().String()[:8]
 
-	if err := dblayer.CreateWorker(workerID, userUID, req.WorkerName); err != nil {
+	if err := dblayer.CreateWorker(workerID, userUID, req.WorkerName, req.AssignedCPU, req.AssignedMemory, req.AssignedDisk, req.MaxReplicas, req.MainRegion); err != nil {
 		c.JSON(500, gin.H{"error": "failed to create worker"})
 		return
 	}

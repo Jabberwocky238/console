@@ -43,6 +43,11 @@ CREATE TABLE IF NOT EXISTS workers (
     active_version_id INTEGER,
     env_json TEXT NOT NULL DEFAULT '{}',
     secrets_json TEXT NOT NULL DEFAULT '[]',
+    assigned_cpu VARCHAR(32) NOT NULL DEFAULT '1',
+    assigned_memory VARCHAR(32) NOT NULL DEFAULT '500Mi',
+    assigned_disk VARCHAR(32) NOT NULL DEFAULT '2Gi',
+    max_replicas INTEGER NOT NULL DEFAULT 1,
+    main_region VARCHAR(64) NOT NULL DEFAULT 'global',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

@@ -44,6 +44,11 @@ type Worker struct {
 	ActiveVersionID *int      `json:"active_version_id"`
 	EnvJSON         string    `json:"env_json"`     // JSON object: {"KEY": "VALUE", ...}
 	SecretsJSON     string    `json:"secrets_json"` // JSON array: ["secret1", "secret2", ...]
+	AssignedCPU    string    `json:"assigned_cpu"`    // e.g. "1"
+	AssignedMemory string    `json:"assigned_memory"` // e.g. "500Mi"
+	AssignedDisk   string    `json:"assigned_disk"`   // e.g. "2Gi"
+	MaxReplicas     int       `json:"max_replicas"`
+	MainRegion      string    `json:"main_region"`
 	CreatedAt       time.Time `json:"created_at"`
 }
 

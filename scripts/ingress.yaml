@@ -23,6 +23,16 @@ metadata:
   namespace: kube-system
 spec:
   valuesContent: |-
+    deployment:
+      kind: DaemonSet
+    updateStrategy:
+      type: RollingUpdate
+      rollingUpdate:
+        maxUnavailable: 2
+        maxSurge: 0
+    nodeSelector:
+      tag: ingress
+    hostNetwork: true
     providers:
       kubernetesIngress:
         allowExternalNameServices: true

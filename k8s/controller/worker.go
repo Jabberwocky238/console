@@ -10,6 +10,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -49,6 +50,67 @@ func (w *WorkerAppSpec) EnsureDeployment(ctx context.Context) error {
 	}
 
 	replicas := int32(1)
+	if w.MaxReplicas > 0 {
+		replicas = int32(w.MaxReplicas)
+	}
+
+	// Build resource requirements with defaults
+	cpuVal := w.AssignedCPU
+	if cpuVal == "" {
+		cpuVal = "1"
+	}
+	memVal := w.AssignedMemory
+	if memVal == "" {
+		memVal = "500Mi"
+	}
+	diskVal := w.AssignedDisk
+	if diskVal == "" {
+		diskVal = "2Gi"
+	}
+	resources := corev1.ResourceRequirements{
+		Limits: corev1.ResourceList{
+			corev1.ResourceCPU:              resource.MustParse(cpuVal),
+			corev1.ResourceMemory:           resource.MustParse(memVal),
+			corev1.ResourceEphemeralStorage: resource.MustParse(diskVal),
+		},
+		Requests: corev1.ResourceList{
+			corev1.ResourceCPU:              resource.MustParse(cpuVal),
+			corev1.ResourceMemory:           resource.MustParse(memVal),
+			corev1.ResourceEphemeralStorage: resource.MustParse(diskVal),
+		},
+	}
+
+	// Build affinity: prefer combinator node + require mainRegion if set
+	affinity := &corev1.Affinity{
+		PodAffinity: &corev1.PodAffinity{
+			PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{{
+				Weight: 100,
+				PodAffinityTerm: corev1.PodAffinityTerm{
+					LabelSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"app": "combinator",
+						},
+					},
+					Namespaces:  []string{k8s.CombinatorNamespace},
+					TopologyKey: "kubernetes.io/hostname",
+				},
+			}},
+		},
+	}
+	if w.MainRegion != "" {
+		affinity.NodeAffinity = &corev1.NodeAffinity{
+			RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+				NodeSelectorTerms: []corev1.NodeSelectorTerm{{
+					MatchExpressions: []corev1.NodeSelectorRequirement{{
+						Key:      "topology.kubernetes.io/region",
+						Operator: corev1.NodeSelectorOpIn,
+						Values:   []string{w.MainRegion},
+					}},
+				}},
+			},
+		}
+	}
+
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      w.Name(),
@@ -63,28 +125,14 @@ func (w *WorkerAppSpec) EnsureDeployment(ctx context.Context) error {
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: w.Labels()},
 				Spec: corev1.PodSpec{
-					Affinity: &corev1.Affinity{
-						PodAffinity: &corev1.PodAffinity{
-							PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{{
-								Weight: 100,
-								PodAffinityTerm: corev1.PodAffinityTerm{
-									LabelSelector: &metav1.LabelSelector{
-										MatchLabels: map[string]string{
-											"app": "combinator",
-										},
-									},
-									Namespaces:  []string{k8s.CombinatorNamespace},
-									TopologyKey: "kubernetes.io/hostname",
-								},
-							}},
-						},
-					},
+					Affinity: affinity,
 					Containers: []corev1.Container{{
 						Name:  w.Name(),
 						Image: w.Image,
 						Ports: []corev1.ContainerPort{{
 							ContainerPort: int32(w.Port),
 						}},
+						Resources: resources,
 						Env: []corev1.EnvVar{
 							{Name: "COMBINATOR_API_ENDPOINT", Value: w.CombinatorEndpoint()},
 							{Name: "RAYSAIL_UID", Value: w.OwnerID},

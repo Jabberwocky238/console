@@ -134,3 +134,75 @@ Updated all Trellis documentation to use outer/inner/web terminology instead of 
 ### Next Steps
 
 - None - task complete
+
+## Session 3: Refactor Custom Domain: Remove DNS01 Client Dependency
+
+**Date**: 2026-02-13
+**Task**: Refactor Custom Domain: Remove DNS01 Client Dependency
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+## Changes Made
+
+### 1. Removed DNS01 Client Dependencies
+- Deleted `InitDNS01Client()` function and all jw238dns HTTP API methods
+- Removed unused imports: `bytes`, `encoding/json`, `io`, `net/http`, `os`
+- Removed `JW238DNS_API_URL` constant
+- Cleaned up `cmd/outer/main.go` to remove `k8s.InitDNS01Client()` call
+
+### 2. Simplified Verification Logic
+- **`VerifyTXT()`**: Now uses only standard `net.LookupTXT()` for DNS queries
+- **`VerifyCNAME()`**: New method to verify CNAME records point to correct target
+- **`StartVerification()`**: Checks both TXT and CNAME every 5s (12 attempts = 60s total)
+
+### 3. Updated Certificate Management
+- Changed issuer from `cert-issuer` to `zerossl-issuer`
+- Switched from DNS-01 to **HTTP-01 challenge** for certificate issuance
+- Added detailed logging for all K8s resource creation steps
+
+### 4. User Workflow Changes
+- Users now manually create TXT and CNAME records in their DNS provider
+- System verifies both records before creating IngressRoute
+- cert-manager handles HTTP-01 challenge automatically
+
+## Technical Details
+
+**Verification Flow**:
+1. User adds custom domain → System generates TXT token
+2. User creates: `_combinator-verify.example.com` TXT record + CNAME to target
+3. System verifies both records every 5s (max 60s)
+4. On success: Creates Service + IngressRoute + Certificate (HTTP-01)
+
+**Files Modified**:
+- `k8s/customdomain.go` - Core refactoring
+- `cmd/outer/main.go` - Removed initialization call
+- `handlers/customdomain.handler.go` - Handler updates
+- `k8s/controller/worker.controller.go` - Controller updates
+
+## Benefits
+- No external dependencies (jw238dns)
+- Standard cert-manager HTTP-01 flow
+- Cleaner, more maintainable code
+- Better logging and error handling
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a1dd25e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -54,8 +54,7 @@ func main() {
 		log.Printf("Warning: K8s client init failed: %v", err)
 		panic("K8s client init failed: " + err.Error())
 	} else {
-		log.Println("K8s client initialized, EnsureCRD and start controller")
-		controller.EnsureCRD(k8s.RestConfig)
+		log.Println("K8s client initialized, starting controller")
 		stopCh := make(chan struct{})
 		defer close(stopCh)
 		ctrl := controller.NewController(k8s.DynamicClient, k8s.K8sClient)

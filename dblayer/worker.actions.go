@@ -3,18 +3,20 @@ package dblayer
 // ========== Worker 基础操作 ==========
 
 // CreateWorker 创建 worker 记录
-func CreateWorker(wid, userUID, workerName string) error {
+func CreateWorker(wid, userUID, workerName, assignedCPU, assignedMemory, assignedDisk string, maxReplicas int, mainRegion string) error {
 	var id int
 	return DB.QueryRow(
-		`INSERT INTO workers (wid, user_uid, worker_name) VALUES ($1, $2, $3) RETURNING id`,
-		wid, userUID, workerName,
+		`INSERT INTO workers (wid, user_uid, worker_name, assigned_cpu, assigned_memory, assigned_disk, max_replicas, main_region)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+		wid, userUID, workerName, assignedCPU, assignedMemory, assignedDisk, maxReplicas, mainRegion,
 	).Scan(&id)
 }
 
 // ListWorkersByUser 获取用户的所有 worker
 func ListWorkersByUser(userUID string) ([]*Worker, error) {
 	rows, err := DB.Query(
-		`SELECT id, wid, user_uid, worker_name, status, active_version_id, env_json, secrets_json, created_at
+		`SELECT id, wid, user_uid, worker_name, status, active_version_id, env_json, secrets_json,
+		        assigned_cpu, assigned_memory, assigned_disk, max_replicas, main_region, created_at
 		 FROM workers WHERE user_uid = $1 ORDER BY created_at DESC`, userUID,
 	)
 	if err != nil {
@@ -25,7 +27,8 @@ func ListWorkersByUser(userUID string) ([]*Worker, error) {
 	var workers []*Worker
 	for rows.Next() {
 		var w Worker
-		if err := rows.Scan(&w.ID, &w.WID, &w.UserUID, &w.WorkerName, &w.Status, &w.ActiveVersionID, &w.EnvJSON, &w.SecretsJSON, &w.CreatedAt); err != nil {
+		if err := rows.Scan(&w.ID, &w.WID, &w.UserUID, &w.WorkerName, &w.Status, &w.ActiveVersionID, &w.EnvJSON, &w.SecretsJSON,
+			&w.AssignedCPU, &w.AssignedMemory, &w.AssignedDisk, &w.MaxReplicas, &w.MainRegion, &w.CreatedAt); err != nil {
 			return nil, err
 		}
 		workers = append(workers, &w)
@@ -74,9 +77,11 @@ func ListDeployVersions(workerID int, limit, offset int) ([]*WorkerDeployVersion
 func GetWorkerByOwner(wid, userUID string) (*Worker, error) {
 	var w Worker
 	err := DB.QueryRow(
-		`SELECT id, wid, user_uid, worker_name, status, active_version_id, env_json, secrets_json, created_at
+		`SELECT id, wid, user_uid, worker_name, status, active_version_id, env_json, secrets_json,
+		        assigned_cpu, assigned_memory, assigned_disk, max_replicas, main_region, created_at
 		 FROM workers WHERE wid = $1 AND user_uid = $2`, wid, userUID,
-	).Scan(&w.ID, &w.WID, &w.UserUID, &w.WorkerName, &w.Status, &w.ActiveVersionID, &w.EnvJSON, &w.SecretsJSON, &w.CreatedAt)
+	).Scan(&w.ID, &w.WID, &w.UserUID, &w.WorkerName, &w.Status, &w.ActiveVersionID, &w.EnvJSON, &w.SecretsJSON,
+		&w.AssignedCPU, &w.AssignedMemory, &w.AssignedDisk, &w.MaxReplicas, &w.MainRegion, &w.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -189,14 +194,16 @@ func GetDeployVersionWithWorker(versionID int) (*WorkerDeployVersion, *Worker, s
 	var userSK string
 	err := DB.QueryRow(
 		`SELECT v.id, v.worker_id, v.image, v.port, v.status, v.msg, v.created_at, u.secret_key,
-		        w.id, w.wid, w.user_uid, w.worker_name, w.status, w.active_version_id, w.env_json, w.secrets_json, w.created_at
+		        w.id, w.wid, w.user_uid, w.worker_name, w.status, w.active_version_id, w.env_json, w.secrets_json,
+		        w.assigned_cpu, w.assigned_memory, w.assigned_disk, w.max_replicas, w.main_region, w.created_at
 		 FROM worker_deploy_versions v
 		 JOIN workers w ON w.id = v.worker_id
 		 JOIN users u ON u.uid = w.user_uid
 		 WHERE v.id = $1`, versionID,
 	).Scan(
 		&v.ID, &v.WorkerID, &v.Image, &v.Port, &v.Status, &v.Msg, &v.CreatedAt, &userSK,
-		&w.ID, &w.WID, &w.UserUID, &w.WorkerName, &w.Status, &w.ActiveVersionID, &w.EnvJSON, &w.SecretsJSON, &w.CreatedAt,
+		&w.ID, &w.WID, &w.UserUID, &w.WorkerName, &w.Status, &w.ActiveVersionID, &w.EnvJSON, &w.SecretsJSON,
+		&w.AssignedCPU, &w.AssignedMemory, &w.AssignedDisk, &w.MaxReplicas, &w.MainRegion, &w.CreatedAt,
 	)
 	if err != nil {
 		return nil, nil, "", err

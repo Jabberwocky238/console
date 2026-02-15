@@ -53,6 +53,7 @@ func (j *deployWorkerJob) Do() error {
 	err = controller.CreateWorkerAppCR(
 		k8s.DynamicClient, name,
 		w.WID, w.UserUID, v.Image, sk, v.Port,
+		w.AssignedCPU, w.AssignedMemory, w.AssignedDisk, w.MaxReplicas, w.MainRegion,
 	)
 	if err != nil {
 		dblayer.UpdateDeployVersionStatus(j.VersionID, "error", err.Error())
