@@ -13,7 +13,12 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"maps"
 )
+
+// ReservedEnvKeys are system-managed environment variables injected into worker Secrets.
+// These keys are stripped from ConfigMaps and force-injected into Secrets.
+var ReservedEnvKeys = []string{"COMBINATOR_API_ENDPOINT", "RAYSAIL_UID", "RAYSAIL_SECRET_KEY"}
 
 // WorkerName returns the canonical resource name for a worker.
 func WorkerName(workerID, ownerID string) string {
@@ -133,11 +138,6 @@ func (w *WorkerAppSpec) EnsureDeployment(ctx context.Context) error {
 							ContainerPort: int32(w.Port),
 						}},
 						Resources: resources,
-						Env: []corev1.EnvVar{
-							{Name: "COMBINATOR_API_ENDPOINT", Value: w.CombinatorEndpoint()},
-							{Name: "RAYSAIL_UID", Value: w.OwnerID},
-							{Name: "RAYSAIL_SECRET_KEY", Value: w.OwnerSK},
-						},
 						EnvFrom: []corev1.EnvFromSource{
 							{
 								ConfigMapRef: &corev1.ConfigMapEnvSource{
@@ -195,13 +195,13 @@ func (w *WorkerAppSpec) EnsureService(ctx context.Context) error {
 	return err
 }
 
-// EnsureConfigMap ensures the worker's env ConfigMap exists (empty if not present).
+// EnsureConfigMap ensures the worker's env ConfigMap exists, stripping reserved keys.
 func (w *WorkerAppSpec) EnsureConfigMap(ctx context.Context) error {
 	if k8s.K8sClient == nil {
 		return fmt.Errorf("k8s client not initialized")
 	}
 	client := k8s.K8sClient.CoreV1().ConfigMaps(k8s.WorkerNamespace)
-	_, err := client.Get(ctx, w.EnvConfigMapName(), metav1.GetOptions{})
+	existing, err := client.Get(ctx, w.EnvConfigMapName(), metav1.GetOptions{})
 	if errors.IsNotFound(err) {
 		cm := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
@@ -212,17 +212,41 @@ func (w *WorkerAppSpec) EnsureConfigMap(ctx context.Context) error {
 			Data: map[string]string{},
 		}
 		_, err = client.Create(ctx, cm, metav1.CreateOptions{})
+		return err
+	}
+	if err != nil {
+		return err
+	}
+	// Strip reserved keys
+	dirty := false
+	for _, key := range ReservedEnvKeys {
+		if _, ok := existing.Data[key]; ok {
+			delete(existing.Data, key)
+			dirty = true
+		}
+	}
+	if dirty {
+		_, err = client.Update(ctx, existing, metav1.UpdateOptions{})
 	}
 	return err
 }
 
-// EnsureSecret ensures the worker's Secret exists (empty if not present).
+// systemSecretData returns the reserved key-value pairs to inject into worker Secrets.
+func (w *WorkerAppSpec) systemSecretData() map[string][]byte {
+	return map[string][]byte{
+		"COMBINATOR_API_ENDPOINT": []byte(w.CombinatorEndpoint()),
+		"RAYSAIL_UID":             []byte(w.OwnerID),
+		"RAYSAIL_SECRET_KEY":      []byte(w.OwnerSK),
+	}
+}
+
+// EnsureSecret ensures the worker's Secret exists with system vars injected.
 func (w *WorkerAppSpec) EnsureSecret(ctx context.Context) error {
 	if k8s.K8sClient == nil {
 		return fmt.Errorf("k8s client not initialized")
 	}
 	client := k8s.K8sClient.CoreV1().Secrets(k8s.WorkerNamespace)
-	_, err := client.Get(ctx, w.SecretName(), metav1.GetOptions{})
+	existing, err := client.Get(ctx, w.SecretName(), metav1.GetOptions{})
 	if errors.IsNotFound(err) {
 		secret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
@@ -231,10 +255,20 @@ func (w *WorkerAppSpec) EnsureSecret(ctx context.Context) error {
 				Labels:    w.Labels(),
 			},
 			Type: corev1.SecretTypeOpaque,
-			Data: map[string][]byte{},
+			Data: w.systemSecretData(),
 		}
 		_, err = client.Create(ctx, secret, metav1.CreateOptions{})
+		return err
 	}
+	if err != nil {
+		return err
+	}
+	// Force-inject system vars
+	if existing.Data == nil {
+		existing.Data = map[string][]byte{}
+	}
+	maps.Copy(existing.Data, w.systemSecretData())
+	_, err = client.Update(ctx, existing, metav1.UpdateOptions{})
 	return err
 }
 

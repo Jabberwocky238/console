@@ -50,18 +50,27 @@ func (j *deployWorkerJob) Do() error {
 	}
 
 	name := controller.WorkerName(w.WID, w.UserUID)
-	err = controller.CreateWorkerAppCR(
-		k8s.DynamicClient, name,
-		w.WID, w.UserUID, v.Image, sk, v.Port,
-		w.AssignedCPU, w.AssignedMemory, w.AssignedDisk, w.MaxReplicas, w.MainRegion,
-	)
+
+	if w.ActiveVersionID != nil {
+		// Try update first
+		err = controller.UpdateWorkerAppCR(k8s.DynamicClient, name, v.Image, v.Port)
+	}
+	if w.ActiveVersionID == nil || err != nil {
+		// First deploy or update failed (CR missing): create with full spec
+		err = controller.CreateWorkerAppCR(
+			k8s.DynamicClient, name,
+			w.WID, w.UserUID, v.Image, sk, v.Port,
+			w.AssignedCPU, w.AssignedMemory, w.AssignedDisk, w.MaxReplicas, w.MainRegion,
+		)
+	}
+
 	if err != nil {
 		dblayer.UpdateDeployVersionStatus(j.VersionID, "error", err.Error())
 		dblayer.UpdateWorkerStatus(w.WID, "error")
-		return fmt.Errorf("create CR for version %d: %w", j.VersionID, err)
+		return fmt.Errorf("deploy CR for version %d: %w", j.VersionID, err)
 	}
 
-	log.Printf("[worker] CR created for version %d", j.VersionID)
+	log.Printf("[worker] CR deployed for version %d", j.VersionID)
 	if err := dblayer.DeployVersionSuccess(j.VersionID, w.ID); err != nil {
 		log.Printf("[worker] update deploy status failed: %v", err)
 	}
@@ -107,6 +116,10 @@ func (j *syncEnvJob) Do() error {
 	cm, err := client.Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		return nil
+	}
+	// Strip reserved keys from ConfigMap
+	for _, key := range controller.ReservedEnvKeys {
+		delete(j.Data, key)
 	}
 	cm.Data = j.Data
 	if _, err = client.Update(ctx, cm, metav1.UpdateOptions{}); err != nil {
@@ -157,11 +170,14 @@ func (j *syncSecretJob) Do() error {
 	if err != nil {
 		return nil
 	}
-	data := make(map[string][]byte, len(j.Data))
-	for k, v := range j.Data {
-		data[k] = []byte(v)
+	// Strip reserved keys from user data
+	for _, key := range controller.ReservedEnvKeys {
+		delete(j.Data, key)
 	}
-	sec.Data = data
+	// Merge user data, preserving existing system vars
+	for k, v := range j.Data {
+		sec.Data[k] = []byte(v)
+	}
 	if _, err = client.Update(ctx, sec, metav1.UpdateOptions{}); err != nil {
 		dblayer.UpdateWorkerStatus(j.WorkerID, "error")
 		return fmt.Errorf("sync secret: %w", err)

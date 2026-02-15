@@ -198,6 +198,7 @@ func strVal(m map[string]interface{}, key string) string {
 
 // --- CR CRUD (used by handlers) ---
 
+// CreateWorkerAppCR creates a new WorkerApp CR. Fails if it already exists.
 func CreateWorkerAppCR(
 	client dynamic.Interface,
 	name, workerID, ownerID, image string, ownerSK string,
@@ -241,17 +242,33 @@ func CreateWorkerAppCR(
 		},
 	}
 
+	_, err := client.Resource(WorkerAppGVR).Namespace(k8s.WorkerNamespace).
+		Create(context.Background(), cr, metav1.CreateOptions{})
+	return err
+}
+
+// UpdateWorkerAppCR updates image and port on an existing WorkerApp CR.
+func UpdateWorkerAppCR(
+	client dynamic.Interface,
+	name, image string,
+	port int,
+) error {
 	ctx := context.Background()
 	res := client.Resource(WorkerAppGVR).Namespace(k8s.WorkerNamespace)
 
 	existing, err := res.Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
-		_, err = res.Create(ctx, cr, metav1.CreateOptions{})
-		return err
+		return fmt.Errorf("get CR %s: %w", name, err)
 	}
 
-	cr.SetResourceVersion(existing.GetResourceVersion())
-	_, err = res.Update(ctx, cr, metav1.UpdateOptions{})
+	spec, _ := existing.Object["spec"].(map[string]interface{})
+	if spec == nil {
+		return fmt.Errorf("CR %s has no spec", name)
+	}
+	spec["image"] = image
+	spec["port"] = int64(port)
+
+	_, err = res.Update(ctx, existing, metav1.UpdateOptions{})
 	return err
 }
 
