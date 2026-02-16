@@ -32,7 +32,7 @@ func (wc *WorkerController) onAdd(obj interface{}) {
 	wc.reconcile(u)
 }
 
-func (wc *WorkerController) onUpdate(oldObj, newObj interface{}) {
+func (wc *WorkerController) onUpdate(oldObj, newObj any) {
 	oldU, ok1 := oldObj.(*unstructured.Unstructured)
 	newU, ok2 := newObj.(*unstructured.Unstructured)
 	if !ok1 || !ok2 {
@@ -155,6 +155,11 @@ func (wc *WorkerController) reconcile(u *unstructured.Unstructured) {
 		wc.ctrl.updateStatus(u, WorkerAppGVR, "Failed", err.Error())
 		return
 	}
+	if err := w.EnsureExternalNameService(ctx); err != nil {
+		log.Printf("[controller] ensure external name service for %s failed: %v", u.GetName(), err)
+		wc.ctrl.updateStatus(u, WorkerAppGVR, "Failed", err.Error())
+		return
+	}
 	if err := w.EnsureIngressRoute(ctx); err != nil {
 		log.Printf("[controller] ensure ingress route for %s failed: %v", u.GetName(), err)
 		wc.ctrl.updateStatus(u, WorkerAppGVR, "Failed", err.Error())
@@ -175,16 +180,16 @@ func workerFromUnstructured(u *unstructured.Unstructured) *WorkerAppSpec {
 	port, _ := spec["port"].(int64)
 	maxReplicas, _ := spec["maxReplicas"].(int64)
 	return &WorkerAppSpec{
-		WorkerID:    fmt.Sprintf("%v", spec["workerID"]),
-		OwnerID:     fmt.Sprintf("%v", spec["ownerID"]),
-		OwnerSK:     fmt.Sprintf("%v", spec["ownerSK"]),
-		Image:       fmt.Sprintf("%v", spec["image"]),
-		Port:        int(port),
+		WorkerID:       fmt.Sprintf("%v", spec["workerID"]),
+		OwnerID:        fmt.Sprintf("%v", spec["ownerID"]),
+		OwnerSK:        fmt.Sprintf("%v", spec["ownerSK"]),
+		Image:          fmt.Sprintf("%v", spec["image"]),
+		Port:           int(port),
 		AssignedCPU:    strVal(spec, "assignedCPU"),
 		AssignedMemory: strVal(spec, "assignedMemory"),
 		AssignedDisk:   strVal(spec, "assignedDisk"),
-		MaxReplicas: int(maxReplicas),
-		MainRegion:  strVal(spec, "mainRegion"),
+		MaxReplicas:    int(maxReplicas),
+		MainRegion:     strVal(spec, "mainRegion"),
 	}
 }
 

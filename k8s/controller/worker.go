@@ -166,7 +166,8 @@ func (w *WorkerAppSpec) EnsureDeployment(ctx context.Context) error {
 	return err
 }
 
-// EnsureService checks and creates the Service if missing.
+// EnsureService creates a headless Service (clusterIP: None) in the worker namespace,
+// so DNS resolves directly to pod IPs and CoreDNS can control routing.
 func (w *WorkerAppSpec) EnsureService(ctx context.Context) error {
 	if k8s.K8sClient == nil {
 		return fmt.Errorf("k8s client not initialized")
@@ -179,7 +180,8 @@ func (w *WorkerAppSpec) EnsureService(ctx context.Context) error {
 			Labels:    w.Labels(),
 		},
 		Spec: corev1.ServiceSpec{
-			Selector: map[string]string{"app": w.Name()},
+			ClusterIP: corev1.ClusterIPNone,
+			Selector:  map[string]string{"app": w.Name()},
 			Ports: []corev1.ServicePort{{
 				Port:     int32(w.Port),
 				Protocol: corev1.ProtocolTCP,
@@ -188,9 +190,68 @@ func (w *WorkerAppSpec) EnsureService(ctx context.Context) error {
 	}
 
 	client := k8s.K8sClient.CoreV1().Services(k8s.WorkerNamespace)
-	_, err := client.Get(ctx, w.Name(), metav1.GetOptions{})
+	existing, err := client.Get(ctx, w.Name(), metav1.GetOptions{})
 	if errors.IsNotFound(err) {
 		_, err = client.Create(ctx, service, metav1.CreateOptions{})
+		return err
+	}
+	if err != nil {
+		return err
+	}
+	// If existing service is not headless, recreate it
+	if existing.Spec.ClusterIP != corev1.ClusterIPNone {
+		if err := client.Delete(ctx, w.Name(), metav1.DeleteOptions{}); err != nil {
+			return fmt.Errorf("delete non-headless service: %w", err)
+		}
+		_, err = client.Create(ctx, service, metav1.CreateOptions{})
+	}
+	return err
+}
+
+// ExternalNameServiceName returns the name of the ExternalName service in the ingress namespace.
+func (w *WorkerAppSpec) ExternalNameServiceName() string {
+	return fmt.Sprintf("%s-ext", w.Name())
+}
+
+// EnsureExternalNameService creates an ExternalName Service in the ingress namespace
+// pointing to the headless service FQDN in the worker namespace.
+// This lets Traefik (in ingress ns) reach worker pods via CoreDNS resolution.
+func (w *WorkerAppSpec) EnsureExternalNameService(ctx context.Context) error {
+	if k8s.K8sClient == nil {
+		return fmt.Errorf("k8s client not initialized")
+	}
+
+	externalName := fmt.Sprintf("%s.%s.svc.cluster.local", w.Name(), k8s.WorkerNamespace)
+
+	service := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      w.ExternalNameServiceName(),
+			Namespace: k8s.IngressNamespace,
+			Labels:    w.Labels(),
+		},
+		Spec: corev1.ServiceSpec{
+			Type:         corev1.ServiceTypeExternalName,
+			ExternalName: externalName,
+			Ports: []corev1.ServicePort{{
+				Port:     int32(w.Port),
+				Protocol: corev1.ProtocolTCP,
+			}},
+		},
+	}
+
+	client := k8s.K8sClient.CoreV1().Services(k8s.IngressNamespace)
+	existing, err := client.Get(ctx, w.ExternalNameServiceName(), metav1.GetOptions{})
+	if errors.IsNotFound(err) {
+		_, err = client.Create(ctx, service, metav1.CreateOptions{})
+		return err
+	}
+	if err != nil {
+		return err
+	}
+	// Update if externalName changed
+	if existing.Spec.ExternalName != externalName {
+		existing.Spec.ExternalName = externalName
+		_, err = client.Update(ctx, existing, metav1.UpdateOptions{})
 	}
 	return err
 }
@@ -301,9 +362,8 @@ func (w *WorkerAppSpec) EnsureIngressRoute(ctx context.Context) error {
 						"kind":  "Rule",
 						"services": []any{
 							map[string]any{
-								"name":      w.Name(),
-								"namespace": k8s.WorkerNamespace,
-								"port":      w.Port,
+								"name": w.ExternalNameServiceName(),
+								"port": w.Port,
 							},
 						},
 					},
@@ -331,6 +391,7 @@ func (w *WorkerAppSpec) DeleteAll(ctx context.Context) {
 	if k8s.K8sClient != nil {
 		k8s.K8sClient.AppsV1().Deployments(k8s.WorkerNamespace).Delete(ctx, w.Name(), metav1.DeleteOptions{})
 		k8s.K8sClient.CoreV1().Services(k8s.WorkerNamespace).Delete(ctx, w.Name(), metav1.DeleteOptions{})
+		k8s.K8sClient.CoreV1().Services(k8s.IngressNamespace).Delete(ctx, w.ExternalNameServiceName(), metav1.DeleteOptions{})
 		k8s.K8sClient.CoreV1().ConfigMaps(k8s.WorkerNamespace).Delete(ctx, w.EnvConfigMapName(), metav1.DeleteOptions{})
 		k8s.K8sClient.CoreV1().Secrets(k8s.WorkerNamespace).Delete(ctx, w.SecretName(), metav1.DeleteOptions{})
 	}

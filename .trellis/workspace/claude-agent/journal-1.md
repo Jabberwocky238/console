@@ -259,3 +259,50 @@ Updated all Trellis documentation to use outer/inner/web terminology instead of 
 ### Next Steps
 
 - None - task complete
+
+## Session 5: Worker部署环境变量重构 + CR Create/Update拆分
+
+**Date**: 2026-02-14
+**Task**: Worker部署环境变量重构 + CR Create/Update拆分
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+## Changes
+
+| Area | Description |
+|------|-------------|
+| Env注入 | 系统变量(COMBINATOR_API_ENDPOINT/RAYSAIL_UID/RAYSAIL_SECRET_KEY)从Deployment硬编码Env移到Secret注入 |
+| EnsureSecret | 每次reconcile强制注入系统变量 |
+| EnsureConfigMap | 每次reconcile静默剔除保留key |
+| syncEnvJob | 写ConfigMap前剔除保留key |
+| syncSecretJob | 写Secret时剔除保留key，merge而非覆盖 |
+| ReservedEnvKeys | 统一定义保留key列表 |
+| CR拆分 | CreateWorkerAppCR(首次，全量spec) + UpdateWorkerAppCR(后续，只更新image/port) |
+| 回退逻辑 | Update GET失败时自动回退到Create |
+
+**Modified Files**:
+- `k8s/controller/worker.go` - ReservedEnvKeys、EnsureSecret注入、EnsureConfigMap剔除、Deployment移除硬编码Env
+- `k8s/controller/worker.controller.go` - 拆分CreateWorkerAppCR和UpdateWorkerAppCR
+- `handlers/jobs/worker.jobs.go` - deployWorkerJob区分首次/后续部署，syncEnv/syncSecret过滤保留key
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cc24208` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
